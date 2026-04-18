@@ -187,7 +187,7 @@ function ToolCard({
   return (
     <div className="tool-card">
       <div className="tool-card-header">
-        <span className="tool-badge">Action Required</span>
+        <span className="tool-badge">I'd like to do this — confirm?</span>
         <span className="tool-name">{toolLabel(browserTool.name)}</span>
       </div>
 
@@ -208,8 +208,8 @@ function ToolCard({
 
       {!loading && (
         <div className="tool-actions">
-          <button className="btn btn-confirm" onClick={onConfirm}>Confirm</button>
-          <button className="btn btn-cancel"  onClick={onCancel}>Cancel</button>
+          <button className="btn btn-confirm" onClick={onConfirm}>Yes, do it</button>
+          <button className="btn btn-cancel"  onClick={onCancel}>Not now</button>
         </div>
       )}
     </div>
@@ -515,6 +515,15 @@ function Sidebar({
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
+type Theme = 'light' | 'dark'
+
+function initialTheme(): Theme {
+  if (typeof window === 'undefined') return 'light'
+  const saved = window.localStorage.getItem('hub-theme')
+  if (saved === 'dark' || saved === 'light') return saved
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
 export default function App() {
   const [wallet,      setWallet]      = useState<WalletInfo | null>(null)
   const [autoSign,    setAutoSign]    = useState(false)
@@ -524,6 +533,17 @@ export default function App() {
   const [pendingTool, setPendingTool] = useState<PendingTool | null>(null)
   const [toolStatus,  setToolStatus]  = useState('')
   const [error,       setError]       = useState<string | null>(null)
+  const [theme,       setTheme]       = useState<Theme>(initialTheme)
+
+  // Sync theme to <html data-theme="..."> + localStorage
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('hub-theme', theme)
+  }, [theme])
+
+  const toggleTheme = useCallback(() => {
+    setTheme(t => t === 'dark' ? 'light' : 'dark')
+  }, [])
 
   const conversationRef = useRef<ConversationMessage[]>([])
   const messagesEndRef  = useRef<HTMLDivElement>(null)
@@ -829,8 +849,20 @@ export default function App() {
       <main className="main">
         <header className="topbar">
           <div className="topbar-subtitle">
-            Trade · Analyze · Bridge · YOLO Mode&nbsp;&nbsp;—&nbsp;&nbsp;powered by Claude
+            <em>Trade</em> · <em>Analyze</em> · <em>Bridge</em> · <em>YOLO</em>
+            &nbsp;&nbsp;—&nbsp;&nbsp;powered by Claude
           </div>
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            <div className="theme-toggle-thumb">
+              <span className="icon-sun">☀</span>
+              <span className="icon-moon">☾</span>
+            </div>
+          </button>
         </header>
 
         <div className="chat-area">
