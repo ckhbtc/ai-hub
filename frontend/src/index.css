@@ -1040,10 +1040,14 @@ body::after {
 
 /* ─── Input bar ────────────────────────────────────────────────────────────── */
 
+/* Input bar — textarea (flex-grows) + Send button (intrinsic width) */
 .input-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  padding: 1rem 2.5rem 1.2rem;
   border-top: 1px solid var(--border);
   background: var(--bg-card);
-  padding: 1rem 2.5rem 1.2rem;
   flex-shrink: 0;
   transition: all 0.3s;
 }
@@ -1054,7 +1058,10 @@ body::after {
 }
 
 .input-textarea {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 680px;
+  margin: 0 auto;
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -1069,10 +1076,6 @@ body::after {
   max-height: 10rem;
   overflow-y: auto;
   letter-spacing: -0.005em;
-  max-width: 760px;
-  margin: 0 auto;
-  display: block;
-  width: 100%;
 }
 .input-textarea:focus {
   border-color: var(--ink-soft);
@@ -1081,7 +1084,6 @@ body::after {
 [data-theme="dark"] .input-textarea {
   border-color: var(--border-bright);
   background: var(--bg-3);
-  backdrop-filter: blur(10px);
 }
 [data-theme="dark"] .input-textarea:focus {
   border-color: var(--accent);
@@ -1099,59 +1101,11 @@ body::after {
   font-family: var(--font);
 }
 
-/* Input bar uses an inner row layout */
-.input-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-.input-bar > * { max-width: 760px; width: 100%; margin: 0 auto; }
-.input-bar { display: block; }
-.input-bar .btn-send {
-  display: inline-flex;
-  margin-top: 0.5rem;
-}
-
-/* Restructure the input bar: textarea + send button in a single row */
-.input-bar {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  padding: 1rem 2.5rem 1.2rem;
-}
-.input-bar > .input-textarea {
-  margin-right: 0.6rem;
-  border-radius: 14px 0 0 14px;
-  border-right: none;
-}
+/* Send button stays intrinsic-width, doesn't flex-grow */
 .input-bar > .btn-send {
-  border-radius: 0 14px 14px 0;
+  flex: 0 0 auto;
+  align-self: flex-end;
 }
-
-/* Cleanest: wrap textarea + button in flex */
-.input-bar {
-  flex-direction: row;
-  align-items: flex-end;
-  max-width: 100%;
-  padding: 1rem 2.5rem 1.2rem;
-}
-
-.input-bar > .input-textarea {
-  flex: 1;
-  margin: 0 0.6rem 0 0;
-  max-width: none;
-  border-radius: 14px;
-}
-.input-bar > .btn-send {
-  margin: 0;
-  border-radius: 10px;
-  height: auto;
-  align-self: stretch;
-}
-
-/* Wrap the input bar contents for centering */
-.input-bar { justify-content: center; }
-.input-bar > .input-textarea { max-width: calc(760px - 90px); }
 
 /* ─── Buttons ──────────────────────────────────────────────────────────────── */
 
