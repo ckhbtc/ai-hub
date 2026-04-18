@@ -8,7 +8,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import { TOOLS, BROWSER_TOOLS, executeServerTool } from './tools'
+import { TOOLS, BROWSER_TOOLS, executeServerTool, enrichBrowserToolInput } from './tools'
 
 // Lazy init — ensures dotenv has loaded before reading the API key
 let _anthropic: Anthropic | null = null
@@ -18,7 +18,7 @@ function getAnthropic(): Anthropic {
   }
   return _anthropic
 }
-const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-5'
+const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5-20251001'
 
 const SYSTEM_PROMPT = `You are an AI trading assistant for Injective Protocol — a high-performance on-chain perpetuals exchange.
 
@@ -29,17 +29,30 @@ You can:
 - Execute perpetual futures trades (long/short, market orders) via MetaMask
 - Bridge USDC from Arbitrum to Injective USDT via deBridge
 - Set up AutoSign (YOLO mode) for session-based trading without per-trade MetaMask popups
+- Check x402 wrapped token balances (WUSDT/WUSDC) on Injective EVM
+- Wrap native USDT/USDC into x402-compatible WUSDT/WUSDC tokens via MetaMask
+- Unwrap WUSDT/WUSDC back to native tokens
+- Make micropayments to x402-protected API endpoints
+- Initialize fresh wallets with INJ for gas (faucet)
 
-Guidelines:
-- Always fetch real data using the available tools before answering questions about prices, balances, or positions
-- Before executing any trade or bridge, summarize the exact parameters and ask the user to confirm
-- For trades: state "Open [direction] [quantity] [symbol] (~$[notional]) at [leverage]x — confirm?" before calling trade_open
-- IMPORTANT: When the user says "long 1 INJ" or "short 0.5 BTC", they mean QUANTITY of the asset, NOT dollars. Fetch the oracle price and multiply: notional_usdt = quantity × price. Only interpret as dollars if they explicitly say "$" or "dollars".
-- Format numbers cleanly for chat — avoid raw markdown tables. Use simple lines instead.
+CRITICAL — YOLO MODE RULES (when AutoSign is active):
+- NEVER ask for confirmation. NEVER say "confirm?", "proceed?", "should I?", or "are you sure?".
+- When the user says "long 1 INJ 1x", immediately call get_market_data then trade_open in the SAME response. Do NOT send a text-only message first.
+- When the user says "close all positions", immediately fetch positions and start closing them ONE AT A TIME. No confirmation text.
+- This applies to ALL actions: opens, closes, bridges. Just execute.
+
+When AutoSign is NOT active:
+- Summarize the trade and ask "confirm?" before calling trade_open/trade_close.
+
+General guidelines:
+- Always fetch real data using tools before answering questions about prices, balances, or positions
+- IMPORTANT: "long 1 INJ" means QUANTITY, not dollars. Fetch oracle price and compute notional_usdt = quantity × price. Only interpret as dollars if they say "$" or "dollars".
+- Format numbers cleanly — avoid raw markdown tables
 - For funding rates: positive = longs pay shorts, negative = shorts pay longs
-- When AutoSign is active, trades execute without MetaMask popups — remind the user of this
-- If the user asks about a wallet, use their connected address automatically if available
-- Keep responses concise and data-forward — show numbers, not just prose`
+- If the user asks about a wallet, use their connected address automatically
+- Keep responses concise and data-forward
+- Close multiple positions ONE AT A TIME (one trade_close per turn)
+- x402 operates on Injective EVM (chain ID 1776), separate from the Injective Cosmos chain used for trading. The wallet switches chains automatically.`
 
 // Public API type (JSON-serialisable for request/response bodies)
 export interface ConversationMessage {
@@ -103,20 +116,25 @@ export async function processChat(
         (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
       )
 
-      // Check for browser tools (only one per turn is handled)
-      const browserTool = toolUseBlocks.find(b => BROWSER_TOOLS.has(b.name))
+      // Check for browser tools (only one per turn is handled by the frontend)
+      const browserTools = toolUseBlocks.filter(b => BROWSER_TOOLS.has(b.name))
+      const browserTool = browserTools[0]
       if (browserTool) {
-        // Claude may also have called server tools in the same response
-        // (e.g. get_positions + trade_close together). We must execute those
-        // inline so their tool_result blocks are included in pendingMessages —
-        // otherwise the API rejects the continuation with a 400 (missing tool_result).
+        // Claude may also have called server tools or MULTIPLE browser tools.
+        // We can only send one browser tool to the frontend at a time.
+        // Server tools are executed inline; extra browser tools get a "queued" result
+        // so the API doesn't reject with missing tool_result errors.
         const serverToolsInSameTurn = toolUseBlocks.filter(b => !BROWSER_TOOLS.has(b.name))
+        const extraBrowserTools = browserTools.slice(1)
 
         const pendingBase: Anthropic.MessageParam[] = [
           ...currentMessages,
           { role: 'assistant' as const, content: response.content },
         ]
 
+        const partialResults: Anthropic.ToolResultBlockParam[] = []
+
+        // Execute server tools inline
         if (serverToolsInSameTurn.length > 0) {
           const serverResults = await Promise.all(
             serverToolsInSameTurn.map(async tool => {
@@ -128,9 +146,21 @@ export async function processChat(
               }
             })
           )
-          // Store server results as a partial user message — continueAfterBrowserTool
-          // will merge the browser tool result into this same message.
-          pendingBase.push({ role: 'user' as const, content: serverResults as Anthropic.ToolResultBlockParam[] })
+          partialResults.push(...serverResults as Anthropic.ToolResultBlockParam[])
+        }
+
+        // Provide error results for extra browser tools (can't handle multiple at once)
+        for (const extra of extraBrowserTools) {
+          partialResults.push({
+            type: 'tool_result' as const,
+            tool_use_id: extra.id,
+            content: 'Skipped — only one browser action can execute per turn. Please call this tool again in the next turn.',
+            is_error: true,
+          } as Anthropic.ToolResultBlockParam)
+        }
+
+        if (partialResults.length > 0) {
+          pendingBase.push({ role: 'user' as const, content: partialResults })
         }
 
         return {
@@ -139,7 +169,7 @@ export async function processChat(
           browserTool: {
             id:    browserTool.id,
             name:  browserTool.name,
-            input: browserTool.input as Record<string, unknown>,
+            input: enrichBrowserToolInput(browserTool.name, browserTool.input as Record<string, unknown>),
             pendingMessages: pendingBase,
           },
         }

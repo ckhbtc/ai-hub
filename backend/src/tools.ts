@@ -6,6 +6,8 @@
 
 import type Anthropic from '@anthropic-ai/sdk'
 import * as inj from './injective'
+import * as x402 from './x402'
+import { initAccount } from './faucet'
 
 // ─── Tool definitions (sent to Claude) ───────────────────────────────────────
 
@@ -156,6 +158,84 @@ export const TOOLS: Anthropic.Tool[] = [
     description: 'Disable AutoSign and clear the ephemeral key. Trading will require MetaMask confirmation again.',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
+  // ─── x402 payment protocol tools ─────────────────────────────────────────
+  {
+    name: 'x402_check_wrapped_balance',
+    description:
+      'Check WUSDT/WUSDC wrapped token balance on Injective EVM for x402 payments. ' +
+      'Also shows the native USDT/USDC balance for comparison. ' +
+      'Wrapped tokens are needed for x402 micropayments (EIP-3009).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'Ethereum 0x address (the user\'s connected wallet)' },
+        token:   { type: 'string', enum: ['WUSDT', 'WUSDC'], description: 'Which wrapped token to check (default WUSDT)' },
+      },
+      required: ['address'],
+    },
+  },
+  {
+    name: 'x402_list_tokens',
+    description: 'List all x402-compatible tokens on Injective EVM, showing which support EIP-3009 for micropayments.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'x402_wrap_tokens',
+    description:
+      'Wrap native USDT or USDC into x402-compatible WUSDT/WUSDC on Injective EVM. ' +
+      'Requires MetaMask (approve + deposit, two confirmations). ' +
+      'Users must wrap tokens before making x402 payments.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        amount: { type: 'string', description: 'Amount to wrap (e.g. "10")' },
+        token:  { type: 'string', enum: ['USDT', 'USDC'], description: 'Which native token to wrap (default USDT)' },
+      },
+      required: ['amount'],
+    },
+  },
+  {
+    name: 'x402_unwrap_tokens',
+    description:
+      'Unwrap WUSDT/WUSDC back to native USDT/USDC on Injective EVM. Requires MetaMask signing.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        amount: { type: 'string', description: 'Amount to unwrap (e.g. "10")' },
+        token:  { type: 'string', enum: ['WUSDT', 'WUSDC'], description: 'Which wrapped token to unwrap (default WUSDT)' },
+      },
+      required: ['amount'],
+    },
+  },
+  {
+    name: 'x402_pay',
+    description:
+      'Make a payment to an x402-protected API endpoint on Injective EVM. ' +
+      'Signs an EIP-3009 authorization via MetaMask and sends it as a PAYMENT header. ' +
+      'The user must have sufficient WUSDT or WUSDC balance.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'The x402-protected URL to pay for' },
+      },
+      required: ['url'],
+    },
+  },
+  // ─── Faucet ──────────────────────────────────────────────────────────────
+  {
+    name: 'faucet_init_account',
+    description:
+      'Initialize a fresh wallet on Injective by sending 0.001 INJ for gas fees. ' +
+      'Use this when a user connects a new wallet that has never transacted on Injective. ' +
+      'Only works if the wallet has < 0.001 INJ balance.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        evm_address: { type: 'string', description: 'The user\'s Ethereum 0x address (from their connected wallet)' },
+      },
+      required: ['evm_address'],
+    },
+  },
 ]
 
 // Tools that require MetaMask — returned to frontend for execution
@@ -165,6 +245,9 @@ export const BROWSER_TOOLS = new Set([
   'bridge_execute',
   'enable_autosign',
   'disable_autosign',
+  'x402_wrap_tokens',
+  'x402_unwrap_tokens',
+  'x402_pay',
 ])
 
 // ─── Server-side tool execution ───────────────────────────────────────────────
@@ -198,7 +281,36 @@ export async function executeServerTool(
     case 'get_bridge_quote':
       return inj.getBridgeQuote(input.amount as string)
 
+    case 'x402_check_wrapped_balance':
+      return x402.getWrappedBalance(input.address as string, (input.token as string) ?? 'WUSDT')
+
+    case 'x402_list_tokens':
+      return x402.listX402Tokens()
+
+    case 'faucet_init_account':
+      return initAccount(input.evm_address as string)
+
     default:
       throw new Error(`Unknown server tool: ${name}`)
   }
+}
+
+/**
+ * For x402 wrap/unwrap browser tools, we pre-compute the calldata server-side
+ * and merge it into the tool input before sending to the frontend.
+ * This keeps viem out of the frontend bundle.
+ */
+export function enrichBrowserToolInput(
+  name: string,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  if (name === 'x402_wrap_tokens') {
+    const txData = x402.buildWrapTxData((input.token as string) ?? 'USDT', input.amount as string)
+    return { ...input, ...txData }
+  }
+  if (name === 'x402_unwrap_tokens') {
+    const txData = x402.buildUnwrapTxData((input.token as string) ?? 'WUSDT', input.amount as string)
+    return { ...input, ...txData }
+  }
+  return input
 }
