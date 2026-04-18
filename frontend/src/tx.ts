@@ -1,13 +1,8 @@
 /**
- * EIP-712 transaction signing via MetaMask + Injective broadcast.
+ * EIP-712 transaction signing via wallet + Injective broadcast.
  *
- * Flow:
- *  1. Fetch account sequence + accountNumber from chain REST API
- *  2. Fetch latest block height for timeout
- *  3. Build EIP-712 typed data from the message
- *  4. Ask MetaMask to sign via eth_signTypedData_v4
- *  5. Assemble TxRaw (createTransaction + createTxRawEIP712 + createWeb3Extension)
- *  6. Broadcast via TxGrpcApi
+ * Non-YOLO: wallet signs EIP-712, direct gRPC broadcast (user pays gas in INJ)
+ * YOLO mode: ephemeral key signs, web3 gateway broadcast (fee delegation, no INJ needed)
  */
 
 import {
@@ -46,11 +41,9 @@ const oracleApi = new IndexerGrpcOracleApi(endpoints.indexer)
 const QUOTE_DECIMALS = 6
 const TIMEOUT_BLOCKS = 20
 
-// Shared fee — must be identical in getEip712TypedData (what MetaMask signs)
-// and createTransaction (what gets broadcast). Any mismatch = signature verification failure.
 const TX_FEE = {
-  amount: [{ denom: 'inj', amount: '200000000000000' }],
-  gas: '1000000',
+  amount: [{ denom: 'inj', amount: '500000000000000' }],
+  gas: '2000000',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -92,46 +85,100 @@ async function getTimeoutHeight(): Promise<number> {
   return parseInt(block.header.height, 10) + TIMEOUT_BLOCKS
 }
 
-// ─── EIP-712 sign via MetaMask ────────────────────────────────────────────────
-
-// Injective's chain verifies EIP-712 signatures using the domain chainId.
-// Only these chain IDs are accepted — any other will fail with "signature verification failed".
-const INJECTIVE_ACCEPTED_EVM_CHAINS: Record<number, string> = {
-  1:    'Ethereum mainnet',
-  2525: 'Injective EVM',
-}
+// ─── EIP-712 wallet signing + direct broadcast ──────────────────────────────
 
 /**
- * Returns the active MetaMask chain ID.
- * Throws a clear error if the chain is not accepted by Injective's EIP-712 verifier.
+ * Get the wallet's EVM chain ID, auto-switching to Injective EVM (1776) if needed.
  */
 async function getEvmChainId(): Promise<number> {
-  if (!window.ethereum) throw new Error('MetaMask not available')
+  if (!window.ethereum) throw new Error('Wallet not available')
   const chainId = parseInt(
     await window.ethereum.request({ method: 'eth_chainId' }) as string, 16
   )
-  if (!INJECTIVE_ACCEPTED_EVM_CHAINS[chainId]) {
-    const accepted = Object.entries(INJECTIVE_ACCEPTED_EVM_CHAINS)
-      .map(([id, name]) => `${name} (${id})`).join(' or ')
-    throw new Error(
-      `MetaMask is on an unsupported network (chain ${chainId}). ` +
-      `Please switch to ${accepted} and try again.`
-    )
+  if (chainId !== 1 && chainId !== 1776) {
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x6f0' }],
+      })
+    } catch (err: unknown) {
+      if ((err as { code?: number }).code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: '0x6f0',
+            chainName: 'Injective EVM',
+            nativeCurrency: { name: 'Injective', symbol: 'INJ', decimals: 18 },
+            rpcUrls: ['https://sentry.evm-rpc.injective.network'],
+            blockExplorerUrls: ['https://blockscout.injective.network'],
+          }],
+        })
+      } else throw err
+    }
+    return 1776
   }
   return chainId
 }
 
-async function signEip712(typedData: unknown): Promise<string> {
-  if (!window.ethereum) throw new Error('MetaMask not available')
-  const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' }) as string[]
-  const from = accounts[0]
+/**
+ * Sign EIP-712 typed data via wallet and broadcast directly.
+ * User pays gas in INJ. For gasless trades, use YOLO mode (fee delegation).
+ */
+async function signAndBroadcast(
+  msg: any,
+  injAddress: string,
+  ethAddress: string,
+  memo: string,
+): Promise<{ txHash: string }> {
+  const [acct, timeoutHeight] = await Promise.all([
+    getAccountDetails(injAddress),
+    getTimeoutHeight(),
+  ])
 
-  const sig = await window.ethereum.request({
+  const evmChainId = await getEvmChainId()
+
+  const typedData = getEip712TypedData({
+    msgs: msg,
+    tx: {
+      accountNumber: acct.accountNumber.toString(),
+      sequence: acct.sequence.toString(),
+      timeoutHeight: timeoutHeight.toString(),
+      chainId: chainInfo.chainId,
+      memo,
+    },
+    fee: TX_FEE,
+    evmChainId: evmChainId as unknown as EvmChainId,
+  })
+
+  const accounts = await window.ethereum!.request({ method: 'eth_requestAccounts' }) as string[]
+  const sig = await window.ethereum!.request({
     method: 'eth_signTypedData_v4',
-    params: [from, JSON.stringify(typedData)],
+    params: [accounts[0], JSON.stringify(typedData)],
   }) as string
+  const sigBytes = hexToBytes(sig.replace('0x', ''))
 
-  return sig
+  const { txRaw } = createTransaction({
+    message: msg,
+    memo,
+    pubKey: acct.pubKey || ethereumPubkeyFromAddress(ethAddress),
+    sequence: acct.sequence,
+    accountNumber: acct.accountNumber,
+    chainId: chainInfo.chainId,
+    timeoutHeight,
+    signMode: SIGN_AMINO,
+    fee: TX_FEE,
+  })
+
+  const web3Extension = createWeb3Extension({ evmChainId: evmChainId as unknown as EvmChainId })
+  const txRawEip712 = createTxRawEIP712(txRaw, web3Extension)
+  txRawEip712.signatures = [sigBytes]
+
+  const response = await txApi.broadcast(txRawEip712)
+  if (response.code !== 0) {
+    throw new Error(`Tx failed (code ${response.code}): ${response.rawLog}`)
+  }
+
+  return { txHash: response.txHash }
 }
 
 // ─── Open trade ───────────────────────────────────────────────────────────────
@@ -153,13 +200,7 @@ export interface TxResult {
 export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
   const { injAddress, ethAddress, market, side, notionalUsdt, leverage, slippage = 0.01 } = params
 
-  // 1. Fetch account state + block height
-  const [acct, timeoutHeight] = await Promise.all([
-    getAccountDetails(injAddress),
-    getTimeoutHeight(),
-  ])
-
-  // 2. Derive subaccount ID from eth address
+  // Derive subaccount ID from eth address
   const subaccountId = Address.fromHex(ethAddress).getSubaccountId(0)
 
   // 3. Build order params
@@ -205,59 +246,13 @@ export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
     feeRecipient: injAddress,
   })
 
-  // AutoSign fast path — no MetaMask popup.
+  // YOLO mode: ephemeral key, fee delegation, no wallet popup
   if (isAutoSignActive()) {
     return broadcastAutoSign(msg, injAddress)
   }
 
-  // 5. Read current MetaMask chain ID — throws if not accepted by Injective's EIP-712 verifier.
-  const evmChainId = await getEvmChainId()
-
-  // 6. Build EIP-712 typed data — pass TX_FEE so the signed hash matches the broadcast tx.
-  const typedData = getEip712TypedData({
-    msgs: msg,
-    tx: {
-      accountNumber: acct.accountNumber.toString(),
-      sequence: acct.sequence.toString(),
-      timeoutHeight: timeoutHeight.toString(),
-      chainId: chainInfo.chainId,
-      memo: `open ${side} ${market.symbol}`,
-    },
-    fee: TX_FEE,
-    evmChainId: evmChainId as unknown as EvmChainId,
-  })
-
-  // 7. Sign with MetaMask
-  const sig = await signEip712(typedData)
-  const sigBytes = hexToBytes(sig.replace('0x', ''))
-
-  // 7. Build TxRaw
-  const { txRaw } = createTransaction({
-    message: msg,
-    memo: `open ${side} ${market.symbol}`,
-    pubKey: acct.pubKey || ethereumPubkeyFromAddress(ethAddress),
-    sequence: acct.sequence,
-    accountNumber: acct.accountNumber,
-    chainId: chainInfo.chainId,
-    timeoutHeight,
-    signMode: SIGN_AMINO,
-    fee: TX_FEE,
-  })
-
-  // Attach EIP-712 extension + MetaMask signature
-  const web3Extension = createWeb3Extension({ evmChainId: evmChainId as unknown as EvmChainId })
-  const txRawEip712 = createTxRawEIP712(txRaw, web3Extension)
-
-  // Replace the placeholder signature with the real MetaMask one
-  txRawEip712.signatures = [sigBytes]
-
-  // 8. Broadcast
-  const response = await txApi.broadcast(txRawEip712)
-  if (response.code !== 0) {
-    throw new Error(`Tx failed (code ${response.code}): ${response.rawLog}`)
-  }
-
-  return { txHash: response.txHash }
+  // Regular: wallet signs, direct broadcast (user pays gas)
+  return signAndBroadcast(msg, injAddress, ethAddress, `open ${side} ${market.symbol}`)
 }
 
 // ─── Close trade ──────────────────────────────────────────────────────────────
@@ -273,11 +268,6 @@ export interface CloseTradeParams {
 
 export async function closeTrade(params: CloseTradeParams): Promise<TxResult> {
   const { injAddress, ethAddress, market, side, quantity, slippage = 0.05 } = params
-
-  const [acct, timeoutHeight] = await Promise.all([
-    getAccountDetails(injAddress),
-    getTimeoutHeight(),
-  ])
 
   const subaccountId = Address.fromHex(ethAddress).getSubaccountId(0)
 
@@ -319,52 +309,13 @@ export async function closeTrade(params: CloseTradeParams): Promise<TxResult> {
     feeRecipient: injAddress,
   })
 
-  // AutoSign fast path — no MetaMask popup.
+  // YOLO mode: ephemeral key, fee delegation, no wallet popup
   if (isAutoSignActive()) {
     return broadcastAutoSign(msg, injAddress)
   }
 
-  // Read current MetaMask chain ID — throws if not accepted by Injective's EIP-712 verifier.
-  const evmChainId = await getEvmChainId()
-
-  const typedData = getEip712TypedData({
-    msgs: msg,
-    tx: {
-      accountNumber: acct.accountNumber.toString(),
-      sequence: acct.sequence.toString(),
-      timeoutHeight: timeoutHeight.toString(),
-      chainId: chainInfo.chainId,
-      memo: `close ${market.symbol}`,
-    },
-    fee: TX_FEE,
-    evmChainId: evmChainId as unknown as EvmChainId,
-  })
-
-  const sig = await signEip712(typedData)
-  const sigBytes = hexToBytes(sig.replace('0x', ''))
-
-  const { txRaw } = createTransaction({
-    message: msg,
-    memo: `close ${market.symbol}`,
-    pubKey: acct.pubKey || ethereumPubkeyFromAddress(ethAddress),
-    sequence: acct.sequence,
-    accountNumber: acct.accountNumber,
-    chainId: chainInfo.chainId,
-    timeoutHeight,
-    signMode: SIGN_AMINO,
-    fee: TX_FEE,
-  })
-
-  const web3Extension = createWeb3Extension({ evmChainId: evmChainId as unknown as EvmChainId })
-  const txRawEip712 = createTxRawEIP712(txRaw, web3Extension)
-  txRawEip712.signatures = [sigBytes]
-
-  const response = await txApi.broadcast(txRawEip712)
-  if (response.code !== 0) {
-    throw new Error(`Tx failed (code ${response.code}): ${response.rawLog}`)
-  }
-
-  return { txHash: response.txHash }
+  // Regular: wallet signs, direct broadcast (user pays gas)
+  return signAndBroadcast(msg, injAddress, ethAddress, `close ${market.symbol}`)
 }
 
 // ─── Utils ───────────────────────────────────────────────────────────────────

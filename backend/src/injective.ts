@@ -308,10 +308,13 @@ export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
   const portfolio = await portfolioApi.fetchAccountPortfolioBalances(injAddress)
   const result: BalanceInfo[] = []
 
+  // Only show tokens the user cares about (INJ, USDT, USDC). Skip dust like WETH, LINK, etc.
+  const RELEVANT_TOKENS = new Set(['INJ', 'USDT'])
+
   for (const b of portfolio.bankBalancesList ?? []) {
     const denom = b.denom ?? ''
     const token = resolveDenom(denom)
-    if (!token) continue
+    if (!token || !RELEVANT_TOKENS.has(token.symbol)) continue
     const amt = new Decimal(b.amount ?? '0').div(new Decimal(10).pow(token.decimals))
     if (amt.gt(0.0001)) {
       result.push({ symbol: token.symbol, amount: amt.toFixed(4), denom, type: 'bank' })
@@ -321,7 +324,7 @@ export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
   for (const s of portfolio.subaccountsList ?? []) {
     const denom = s.denom ?? ''
     const token = resolveDenom(denom)
-    if (!token) continue
+    if (!token || !RELEVANT_TOKENS.has(token.symbol)) continue
     const avail = new Decimal(s.deposit?.availableBalance ?? '0').div(new Decimal(10).pow(token.decimals))
     if (avail.gt(0.0001)) {
       result.push({ symbol: token.symbol, amount: avail.toFixed(4), denom, type: 'subaccount' })

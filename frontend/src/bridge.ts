@@ -226,12 +226,12 @@ export async function executeBridge(
   }
 
   // 2. Switch MetaMask to Arbitrum.
-  onProgress('Switching MetaMask to Arbitrum…')
+  onProgress('Switching to Arbitrum…')
   await switchToArbitrum()
 
   // 3. Approve USDC to deBridge spender.
   const spender = raw.tx.allowanceTarget ?? raw.tx.to
-  onProgress('Step 1 / 2 — Approve USDC (confirm in MetaMask)…')
+  onProgress('Step 1 / 2 — Approve USDC (confirm in wallet)…')
   const approveData     = encodeApprove(spender, BigInt(srcAmountBase))
   const approveTxHash   = await sendMM({
     from: senderEvm,
@@ -244,7 +244,7 @@ export async function executeBridge(
   await waitForReceipt(approveTxHash)
 
   // 5. Submit bridge tx with ETH fix fee.
-  onProgress('Step 2 / 2 — Bridge transaction (confirm in MetaMask)…')
+  onProgress('Step 2 / 2 — Bridge transaction (confirm in wallet)…')
   const bridgeTxHash = await sendMM({
     from:  senderEvm,
     to:    raw.tx.to,

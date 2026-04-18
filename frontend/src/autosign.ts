@@ -104,7 +104,7 @@ export async function enableAutoSign(
   const { privateKey: privKey } = PrivateKey.generate()
   const ephemeralAddress        = privKey.toBech32()
 
-  onProgress?.('Confirm the AutoSign grant in MetaMask (one-time)…')
+  onProgress?.('Confirm the YOLO mode grant in wallet (one-time)…')
 
   // 2. Fetch account + block info needed to build the grant tx.
   const [acct, block] = await Promise.all([
@@ -190,7 +190,7 @@ export async function enableAutoSign(
     throw new Error(`AutoSign grant failed (code ${response.code}): ${response.rawLog}`)
   }
 
-  // 7. Store ephemeral key + Injective EVM chain ID (always 2525).
+  // 7. Store ephemeral key + Injective EVM chain ID.
   _state = {
     privateKey:       privKey.toPrivateKeyHex(),
     injectiveAddress: ephemeralAddress,
@@ -198,7 +198,7 @@ export async function enableAutoSign(
     evmChainId,
   }
 
-  onProgress?.('AutoSign enabled — no more MetaMask popups while trading!')
+  onProgress?.('YOLO mode enabled — trades execute without prompting!')
 }
 
 // ─── Broadcast via ephemeral key ─────────────────────────────────────────────
@@ -247,7 +247,7 @@ export async function broadcastAutoSign(
 
 const INJECTIVE_ACCEPTED_EVM_CHAINS: Record<number, string> = {
   1:    'Ethereum mainnet',
-  2525: 'Injective EVM',
+  1776: 'Injective EVM',
 }
 
 async function getEvmChainId(): Promise<number> {
@@ -256,12 +256,29 @@ async function getEvmChainId(): Promise<number> {
     await window.ethereum.request({ method: 'eth_chainId' }) as string, 16
   )
   if (!INJECTIVE_ACCEPTED_EVM_CHAINS[chainId]) {
-    const accepted = Object.entries(INJECTIVE_ACCEPTED_EVM_CHAINS)
-      .map(([id, name]) => `${name} (${id})`).join(' or ')
-    throw new Error(
-      `MetaMask is on an unsupported network (chain ${chainId}). ` +
-      `Please switch to ${accepted} and try again.`
-    )
+    const targetHex = '0x6f0' // 1776
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: targetHex }],
+      })
+    } catch (err: unknown) {
+      if ((err as { code?: number }).code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: targetHex,
+            chainName: 'Injective EVM',
+            nativeCurrency: { name: 'Injective', symbol: 'INJ', decimals: 18 },
+            rpcUrls: ['https://sentry.evm-rpc.injective.network'],
+            blockExplorerUrls: ['https://blockscout.injective.network'],
+          }],
+        })
+      } else {
+        throw err
+      }
+    }
+    return 1776
   }
   return chainId
 }
