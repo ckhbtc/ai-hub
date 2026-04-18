@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Injective AI Hub — Hearth mock</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --paper: #f7f3ec;
+  --paper-warm: #f1ece2;
+  --paper-deep: #e8e2d3;
+  --ink: #1f1a13;
+  --ink-soft: #3c342a;
+  --ink-mid: #6b6256;
+  --ink-faint: #a59c8e;
+  --rule: #d8d0bf;
+  --rule-soft: #e6e0cf;
+  --accent: #c0532b;        /* warm terracotta — Anthropic-ish */
+  --accent-soft: #efd7c8;
+  --gold: #ad8c30;
+  --green: #4a7a3a;
+  --red: #b53a28;
+}
+
+html { font-size: 15px; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Geist', sans-serif;
+  font-weight: 400;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(192, 83, 43, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(173, 140, 48, 0.03) 0%, transparent 50%);
+}
+
+::selection { background: var(--accent); color: var(--paper); }
+
+/* ─────────── LAYOUT ─────────── */
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ─────────── SIDEBAR ─────────── */
+.sidebar {
+  background: var(--paper-warm);
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 1.4rem 1.2rem 1rem;
+}
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--rule); }
+
+.sb-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1.6rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.sb-logo-glyph {
+  width: 30px; height: 30px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 1.1rem;
+  letter-spacing: -0.04em;
+  font-variation-settings: 'opsz' 60;
+}
+.sb-logo-text {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 500;
+  font-size: 1rem;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  font-variation-settings: 'opsz' 16;
+}
+
+.sb-section {
+  margin-bottom: 1.4rem;
+}
+.sb-section + .sb-section {
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.sb-label {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  margin-bottom: 0.6rem;
+  font-weight: 500;
+}
+
+/* Wallet pill */
+.wallet-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  width: fit-content;
+}
+.wallet-dot {
+  width: 8px; height: 8px;
+  background: var(--green);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.wallet-addr {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  letter-spacing: -0.01em;
+}
+
+/* Credits */
+.credits-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 0.8rem 0.9rem;
+}
+.credits-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.4rem;
+}
+.credits-row:last-of-type { margin-bottom: 0; }
+.credits-key {
+  font-size: 0.78rem;
+  color: var(--ink-mid);
+}
+.credits-val {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink);
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+  font-variation-settings: 'opsz' 16;
+}
+.credits-val.muted {
+  font-family: 'Geist Mono', monospace;
+  font-weight: 500;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+.credits-foot {
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px dotted var(--rule);
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.66rem;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+/* Deposit row */
+.input-row {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+.input-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--paper);
+  font-family: 'Geist', sans-serif;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+.input-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: #fff;
+}
+.btn-action {
+  padding: 0.5rem 0.9rem;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: 7px;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  letter-spacing: -0.005em;
+  transition: background 0.15s;
+}
+.btn-action:hover { background: var(--accent); }
+
+.bridge-note {
+  margin-top: 0.9rem;
+  padding-top: 0.6rem;
+  border-top: 1px dotted var(--rule);
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-size: 0.8rem;
+  color: var(--ink-mid);
+  font-variation-settings: 'opsz' 16;
+}
+
+/* YOLO toggle */
+.yolo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+}
+.yolo-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.yolo-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--ink-faint);
+}
+.yolo-label {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--ink-mid);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.yolo-btn {
+  padding: 0.35rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.yolo-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+/* Suggestions */
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.suggestion {
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--rule-soft);
+  padding: 0.45rem 0.7rem;
+  border-radius: 7px;
+  font-family: 'Source Serif 4', serif;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all 0.12s;
+  font-variation-settings: 'opsz' 16;
+  font-style: italic;
+  letter-spacing: -0.005em;
+}
+.suggestion:hover {
+  border-color: var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* Footer */
+.sb-footer {
+  margin-top: auto;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--rule-soft);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.sb-footer-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--ink-soft);
+  font-variation-settings: 'opsz' 16;
+}
+.sb-footer-mark::before {
+  content: '';
+  width: 14px; height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ─────────── MAIN ─────────── */
+.main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.topbar {
+  padding: 1.2rem 2.5rem 0.5rem;
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-size: 0.92rem;
+  color: var(--ink-mid);
+  font-variation-settings: 'opsz' 18;
+  letter-spacing: -0.005em;
+}
+.topbar .sep {
+  display: inline-block;
+  margin: 0 0.5rem;
+  color: var(--rule);
+}
+.topbar .brand {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem 2.5rem 1rem;
+  scroll-behavior: smooth;
+}
+.chat::-webkit-scrollbar { width: 6px; }
+.chat::-webkit-scrollbar-track { background: transparent; }
+.chat::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+
+.chat-inner {
+  max-width: 740px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* User message — quiet, paper-tone */
+.msg-user {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--paper-deep);
+  padding: 0.85rem 1.1rem;
+  border-radius: 18px 18px 4px 18px;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+
+/* AI message — full width, serif prose */
+.msg-ai {
+  width: 100%;
+}
+.msg-ai-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.7rem;
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+.msg-ai-meta::before {
+  content: '';
+  width: 16px; height: 16px;
+  background: var(--ink);
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+}
+.msg-ai-prose {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+  font-variation-settings: 'opsz' 18;
+}
+.msg-ai-prose p {
+  margin-bottom: 0.85rem;
+}
+.msg-ai-prose p:last-child { margin-bottom: 0; }
+.msg-ai-prose strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.msg-ai-prose em {
+  font-style: italic;
+  font-variation-settings: 'opsz' 18, 'wght' 400;
+  color: var(--ink-soft);
+}
+
+/* AI markdown table */
+.md-table-wrap {
+  margin: 1rem 0;
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+.md-table th {
+  text-align: left;
+  padding: 0.55rem 1rem;
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-mid);
+  font-weight: 500;
+  border-bottom: 1px solid var(--rule);
+  background: rgba(0,0,0,0.02);
+}
+.md-table td {
+  padding: 0.55rem 1rem;
+  font-family: 'Geist', sans-serif;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.md-table tr:last-child td { border-bottom: none; }
+.md-table td:first-child {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 500;
+  color: var(--ink);
+  font-variation-settings: 'opsz' 18;
+}
+.md-table td.up { color: var(--green); font-family: 'Geist Mono', monospace; font-size: 0.82rem; }
+.md-table td.dn { color: var(--red); font-family: 'Geist Mono', monospace; font-size: 0.82rem; }
+.md-table td.num { font-family: 'Geist Mono', monospace; font-size: 0.84rem; color: var(--ink); }
+
+/* Tool card — friendly framing */
+.tool-card {
+  margin-top: 1.5rem;
+  background: var(--paper);
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  padding: 1.2rem 1.4rem 1.1rem;
+  position: relative;
+  box-shadow: 0 1px 0 rgba(192, 83, 43, 0.06), 0 8px 24px rgba(31, 26, 19, 0.04);
+}
+.tool-card-eyebrow {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+.tool-card-prose {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: var(--ink);
+  margin-bottom: 1rem;
+  font-variation-settings: 'opsz' 18;
+}
+.tool-card-prose em {
+  font-style: italic;
+  color: var(--ink-soft);
+}
+.tool-params {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem 1.5rem;
+  padding: 0.9rem 0;
+  margin: 0 -0.2rem;
+  border-top: 1px dotted var(--rule);
+  border-bottom: 1px dotted var(--rule);
+  margin-bottom: 1rem;
+}
+.tool-param-key {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-mid);
+  display: block;
+  margin-bottom: 0.18rem;
+}
+.tool-param-val {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 600;
+  font-size: 0.98rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-variation-settings: 'opsz' 18;
+}
+.tool-actions {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+}
+.btn-affirm {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.65rem 1.3rem;
+  border-radius: 8px;
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 0.95rem;
+  cursor: pointer;
+  letter-spacing: -0.005em;
+  font-variation-settings: 'opsz' 18;
+  transition: background 0.15s;
+}
+.btn-affirm:hover { background: #a4451f; }
+.btn-decline {
+  background: transparent;
+  color: var(--ink-mid);
+  border: 1px solid var(--rule);
+  padding: 0.65rem 1.1rem;
+  border-radius: 8px;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-decline:hover { color: var(--ink); border-color: var(--ink-mid); }
+
+/* Input bar */
+.input-bar {
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 1rem 2.5rem 1.2rem;
+}
+.input-bar-inner {
+  max-width: 740px;
+  margin: 0 auto;
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-end;
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 0.7rem 0.9rem 0.7rem 1.1rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+.input-bar-inner:focus-within {
+  border-color: var(--ink-soft);
+  background: #fff;
+}
+.input-textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  resize: none;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--ink);
+  padding: 0.3rem 0;
+  letter-spacing: -0.005em;
+  outline: none;
+  min-height: 1.4rem;
+  max-height: 8rem;
+}
+.input-textarea::placeholder {
+  color: var(--ink-faint);
+  font-style: italic;
+  font-family: 'Source Serif 4', serif;
+  font-variation-settings: 'opsz' 18;
+}
+.btn-send {
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  padding: 0.55rem 1.2rem;
+  border-radius: 9px;
+  font-family: 'Geist', sans-serif;
+  font-weight: 500;
+  font-size: 0.85rem;
+  cursor: pointer;
+  letter-spacing: -0.005em;
+  transition: background 0.15s;
+}
+.btn-send:hover { background: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ─────────── SIDEBAR ─────────── -->
+  <aside class="sidebar">
+    <div class="sb-logo">
+      <div class="sb-logo-glyph">h</div>
+      <div class="sb-logo-text">Injective AI Hub</div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Wallet</div>
+      <div class="wallet-pill">
+        <span class="wallet-dot"></span>
+        <span class="wallet-addr">0x742d…35Ac</span>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Credits</div>
+      <div class="credits-card">
+        <div class="credits-row">
+          <span class="credits-key">Balance</span>
+          <span class="credits-val">$4.27</span>
+        </div>
+        <div class="credits-row">
+          <span class="credits-key">Messages left</span>
+          <span class="credits-val muted">427</span>
+        </div>
+        <div class="credits-row">
+          <span class="credits-key">Wallet USDT</span>
+          <span class="credits-val muted">12.50</span>
+        </div>
+        <div class="credits-foot">$0.01 USDT per message</div>
+      </div>
+      <div class="input-row">
+        <input type="number" value="1.0" />
+        <button class="btn-action">Deposit USDT</button>
+      </div>
+      <div class="bridge-note">No USDT? Bridge from Arbitrum:</div>
+      <div class="input-row">
+        <input type="number" value="10" />
+        <button class="btn-action">Bridge USDC</button>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">YOLO Mode</div>
+      <div class="yolo-row">
+        <div class="yolo-status">
+          <div class="yolo-dot"></div>
+          <span class="yolo-label">Off</span>
+        </div>
+        <button class="yolo-btn">Enable</button>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Try asking</div>
+      <div class="suggestions">
+        <button class="suggestion">What's the BTC price?</button>
+        <button class="suggestion">Show me BTC orderbook</button>
+        <button class="suggestion">What are my balances?</button>
+        <button class="suggestion">Show my positions</button>
+        <button class="suggestion">Bridge 100 USDC to Injective</button>
+      </div>
+    </div>
+
+    <div class="sb-footer">
+      <span class="sb-footer-mark">Powered by Injective</span>
+    </div>
+  </aside>
+
+  <!-- ─────────── MAIN ─────────── -->
+  <main class="main">
+
+    <div class="topbar">
+      <em>Trade</em>
+      <span class="sep">·</span>
+      <em>Analyze</em>
+      <span class="sep">·</span>
+      <em>Bridge</em>
+      <span class="sep">·</span>
+      <em>YOLO</em>
+      &nbsp;&nbsp;—&nbsp;&nbsp;
+      powered by <span class="brand">Claude</span>
+    </div>
+
+    <div class="chat">
+      <div class="chat-inner">
+
+        <div class="msg-user">
+          What's the BTC funding rate right now?
+        </div>
+
+        <div class="msg-ai">
+          <div class="msg-ai-meta">Claude</div>
+          <div class="msg-ai-prose">
+            <p>BTC funding is mildly positive — longs are paying shorts a small premium. Here's the current picture across the majors:</p>
+
+            <div class="md-table-wrap">
+              <table class="md-table">
+                <thead>
+                  <tr>
+                    <th>Pair</th>
+                    <th>Mark Price</th>
+                    <th>Funding (8h)</th>
+                    <th>Open Interest</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>BTC/USDT</td>
+                    <td class="num">$94,247.30</td>
+                    <td class="up">+0.0089%</td>
+                    <td class="num">$4.2M</td>
+                  </tr>
+                  <tr>
+                    <td>ETH/USDT</td>
+                    <td class="num">$3,418.55</td>
+                    <td class="up">+0.0042%</td>
+                    <td class="num">$1.8M</td>
+                  </tr>
+                  <tr>
+                    <td>SOL/USDT</td>
+                    <td class="num">$238.91</td>
+                    <td class="dn">−0.0031%</td>
+                    <td class="num">$612K</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p>For BTC, that's roughly <strong>+0.027% over 24 hours</strong> if rates hold — modest, but it tells you the book is leaning long. SOL is the only major paying shorts at the moment.</p>
+
+            <p>Want me to open a directional position based on this?</p>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-eyebrow">I'd like to do this — confirm?</div>
+          <div class="tool-card-prose">
+            Open a <strong>5×</strong> long position on <strong>BTC/USDT PERP</strong> for <em>$100 of notional</em>.
+          </div>
+          <div class="tool-params">
+            <div>
+              <span class="tool-param-key">Market</span>
+              <span class="tool-param-val">BTC/USDT PERP</span>
+            </div>
+            <div>
+              <span class="tool-param-key">Side</span>
+              <span class="tool-param-val">Long</span>
+            </div>
+            <div>
+              <span class="tool-param-key">Notional</span>
+              <span class="tool-param-val">$100.00 USDT</span>
+            </div>
+            <div>
+              <span class="tool-param-key">Leverage</span>
+              <span class="tool-param-val">5×</span>
+            </div>
+          </div>
+          <div class="tool-actions">
+            <button class="btn-affirm">Yes, do it</button>
+            <button class="btn-decline">Not now</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-bar-inner">
+        <textarea class="input-textarea" rows="1" placeholder="Ask about prices, balances, trades, bridges…"></textarea>
+        <button class="btn-send">Send</button>
+      </div>
+    </div>
+
+  </main>
+
+</div>
+
+</body>
+</html>

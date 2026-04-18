@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Injective AI Hub — Combined (Hearth + Atrium)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ─────────── LIGHT MODE (Hearth) — defaults ─────────── */
+:root {
+  --bg: #f7f3ec;
+  --bg-alt: #f1ece2;
+  --bg-card: #f7f3ec;          /* cards same as bg in light */
+  --bg-deep: #e8e2d3;
+  --ink: #1f1a13;
+  --ink-soft: #3c342a;
+  --ink-mid: #6b6256;
+  --ink-faint: #a59c8e;
+  --rule: #d8d0bf;
+  --rule-soft: #e6e0cf;
+  --rule-bright: #d8d0bf;
+  --accent: #c0532b;
+  --accent-soft: #efd7c8;
+  --accent-glow: transparent;
+  --accent-grad: #c0532b;
+  --gold: #ad8c30;
+  --green: #4a7a3a;
+  --red: #b53a28;
+  --shadow-soft: 0 1px 0 rgba(192, 83, 43, 0.06), 0 8px 24px rgba(31, 26, 19, 0.04);
+  --shadow-card: none;
+  --backdrop: none;
+  --backdrop-fallback: #f1ece2;
+  --paper-grain-opacity: 1;
+}
+
+/* ─────────── DARK MODE (Atrium) — overrides ─────────── */
+[data-theme="dark"] {
+  --bg: #07090e;
+  --bg-alt: rgba(20, 26, 40, 0.55);
+  --bg-card: rgba(14, 20, 34, 0.6);
+  --bg-deep: rgba(28, 36, 56, 0.7);
+  --ink: #e8ecf6;
+  --ink-soft: #c8d0dc;
+  --ink-mid: #8b94a8;
+  --ink-faint: #5b6478;
+  --rule: rgba(120, 165, 220, 0.12);
+  --rule-soft: rgba(120, 165, 220, 0.06);
+  --rule-bright: rgba(120, 165, 220, 0.28);
+  --accent: #00d4ff;
+  --accent-soft: rgba(0, 212, 255, 0.15);
+  --accent-glow: rgba(0, 212, 255, 0.4);
+  --accent-grad: linear-gradient(135deg, #00d4ff 0%, #3d7bff 100%);
+  --gold: #fbbf24;
+  --green: #34d399;
+  --red: #f87171;
+  --shadow-soft: 0 0 30px rgba(0,212,255,0.08), 0 8px 24px rgba(0,0,0,0.3);
+  --shadow-card: 0 0 0 1px rgba(120, 165, 220, 0.06);
+  --backdrop: blur(20px) saturate(160%);
+  --backdrop-fallback: rgba(8, 12, 22, 0.85);
+  --paper-grain-opacity: 0;
+}
+
+html { font-size: 15px; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Geist', sans-serif;
+  font-weight: 400;
+  min-height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+::selection { background: var(--accent); color: var(--bg); }
+
+/* ─── Atmospheric backgrounds — different per theme ─── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(192, 83, 43, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(173, 140, 48, 0.03) 0%, transparent 50%);
+  opacity: var(--paper-grain-opacity);
+  transition: opacity 0.3s ease;
+}
+[data-theme="dark"] body::before {
+  background:
+    radial-gradient(ellipse 50% 60% at 100% 0%, rgba(0, 212, 255, 0.08), transparent 70%),
+    radial-gradient(ellipse 60% 70% at 0% 100%, rgba(61, 123, 255, 0.06), transparent 70%);
+  opacity: 1;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+[data-theme="dark"] body::after {
+  opacity: 1;
+  background-image:
+    linear-gradient(rgba(120, 165, 220, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 165, 220, 0.025) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+}
+
+/* ─────────── LAYOUT ─────────── */
+.app {
+  display: grid;
+  grid-template-columns: 290px 1fr;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+/* ─────────── SIDEBAR ─────────── */
+.sidebar {
+  background: var(--bg-alt);
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 1.4rem 1.2rem 1rem;
+  backdrop-filter: var(--backdrop);
+  -webkit-backdrop-filter: var(--backdrop);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--rule); }
+
+.sb-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1.6rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.sb-logo-glyph {
+  width: 30px; height: 30px;
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 1.1rem;
+  letter-spacing: -0.04em;
+  font-variation-settings: 'opsz' 60;
+  transition: background 0.3s, color 0.3s;
+}
+[data-theme="dark"] .sb-logo-glyph {
+  background: var(--accent-grad);
+  color: var(--bg);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+.sb-logo-text {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 500;
+  font-size: 1rem;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  font-variation-settings: 'opsz' 16;
+}
+
+.sb-section { margin-bottom: 1.4rem; }
+.sb-section + .sb-section {
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.sb-label {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  margin-bottom: 0.6rem;
+  font-weight: 500;
+}
+
+/* Wallet pill (light) → upgrades to gradient-ring card (dark) */
+.wallet-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--bg-card);
+  border: 1px solid var(--rule);
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  width: fit-content;
+  position: relative;
+  transition: all 0.3s ease;
+}
+.wallet-dot {
+  width: 8px; height: 8px;
+  background: var(--green);
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+.wallet-addr {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  letter-spacing: -0.01em;
+}
+.wallet-tag { display: none; }
+
+[data-theme="dark"] .wallet-card {
+  width: 100%;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  background: var(--bg-card);
+  border-color: var(--rule-bright);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+[data-theme="dark"] .wallet-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 12px;
+  padding: 1px;
+  background: var(--accent-grad);
+  -webkit-mask: linear-gradient(#fff, #fff) content-box, linear-gradient(#fff, #fff);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  opacity: 0.5;
+  pointer-events: none;
+}
+[data-theme="dark"] .wallet-dot {
+  width: 30px; height: 30px;
+  background: var(--accent-grad);
+  box-shadow: 0 0 14px var(--accent-glow);
+  position: relative;
+}
+[data-theme="dark"] .wallet-dot::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; right: -1px;
+  width: 9px; height: 9px;
+  background: var(--green);
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+}
+[data-theme="dark"] .wallet-tag {
+  display: block;
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+[data-theme="dark"] .wallet-info { flex: 1; min-width: 0; }
+[data-theme="dark"] .wallet-addr { font-size: 0.8rem; color: var(--ink); }
+
+/* Credits */
+.credits-card {
+  background: var(--bg-card);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 0.85rem 0.95rem;
+  transition: background 0.3s, border-color 0.3s;
+}
+[data-theme="dark"] .credits-card {
+  border-radius: 12px;
+  padding: 1rem;
+}
+.credits-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.4rem;
+}
+.credits-row:last-of-type { margin-bottom: 0; }
+.credits-key {
+  font-size: 0.78rem;
+  color: var(--ink-mid);
+}
+.credits-val {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: var(--ink);
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+  font-variation-settings: 'opsz' 28;
+  transition: color 0.3s;
+}
+[data-theme="dark"] .credits-val.hero {
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 12px var(--accent-glow));
+  font-weight: 700;
+}
+.credits-val.muted {
+  font-family: 'Geist Mono', monospace;
+  font-weight: 500;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+.credits-foot {
+  margin-top: 0.7rem;
+  padding-top: 0.55rem;
+  border-top: 1px dotted var(--rule);
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.66rem;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+[data-theme="dark"] .credits-foot { border-top-style: solid; }
+
+/* Inputs */
+.input-row {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+.input-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--bg-card);
+  font-family: 'Geist', sans-serif;
+  font-size: 0.85rem;
+  color: var(--ink);
+  transition: all 0.2s;
+}
+[data-theme="dark"] .input-row input {
+  background: rgba(0,0,0,0.3);
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.8rem;
+}
+.input-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+[data-theme="dark"] .input-row input:focus {
+  box-shadow: 0 0 0 3px rgba(0,212,255,0.1);
+}
+.btn-action {
+  padding: 0.5rem 0.9rem;
+  background: var(--ink);
+  color: var(--bg);
+  border: none;
+  border-radius: 7px;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  letter-spacing: -0.005em;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-action:hover { background: var(--accent); }
+[data-theme="dark"] .btn-action {
+  background: var(--accent-grad);
+  color: var(--bg);
+  font-weight: 600;
+  border-radius: 8px;
+}
+[data-theme="dark"] .btn-action:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.bridge-note {
+  margin-top: 0.9rem;
+  padding-top: 0.6rem;
+  border-top: 1px dotted var(--rule);
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-size: 0.8rem;
+  color: var(--ink-mid);
+  font-variation-settings: 'opsz' 16;
+}
+[data-theme="dark"] .bridge-note {
+  border-top-style: solid;
+  font-style: normal;
+  font-family: 'Geist', sans-serif;
+}
+
+/* YOLO toggle */
+.yolo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+}
+[data-theme="dark"] .yolo-row { border-radius: 12px; padding: 0.8rem 0.9rem; }
+.yolo-status { display: flex; align-items: center; gap: 0.5rem; }
+.yolo-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--ink-faint);
+}
+.yolo-label {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--ink-mid);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.yolo-btn {
+  padding: 0.35rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.yolo-btn:hover { border-color: var(--ink); color: var(--ink); }
+[data-theme="dark"] .yolo-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Suggestions — italic serif chips in BOTH themes (literate vibe) */
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.suggestion {
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--rule-soft);
+  padding: 0.45rem 0.7rem;
+  border-radius: 7px;
+  font-family: 'Source Serif 4', serif;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-variation-settings: 'opsz' 16;
+  font-style: italic;
+  letter-spacing: -0.005em;
+}
+.suggestion:hover {
+  border-color: var(--rule);
+  background: var(--bg-card);
+  color: var(--ink);
+}
+[data-theme="dark"] .suggestion {
+  border-color: var(--rule);
+  background: var(--bg-card);
+}
+[data-theme="dark"] .suggestion:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+/* Footer */
+.sb-footer {
+  margin-top: auto;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--rule-soft);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.sb-footer-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--ink-soft);
+  font-variation-settings: 'opsz' 16;
+}
+.sb-footer-mark::before {
+  content: '';
+  width: 14px; height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+  transition: all 0.3s;
+}
+[data-theme="dark"] .sb-footer-mark::before {
+  background: var(--accent-grad);
+  border-radius: 4px;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* ─────────── MAIN ─────────── */
+.main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.topbar {
+  padding: 1.2rem 2.5rem 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.topbar-left {
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-size: 0.92rem;
+  color: var(--ink-mid);
+  font-variation-settings: 'opsz' 18;
+  letter-spacing: -0.005em;
+}
+.topbar-left .sep { display: inline-block; margin: 0 0.5rem; color: var(--rule); }
+.topbar-left .brand { font-style: normal; font-weight: 500; color: var(--ink); }
+
+/* Theme toggle (sun/moon) */
+.theme-toggle {
+  background: var(--bg-card);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  width: 44px; height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  cursor: pointer;
+  transition: all 0.25s;
+  position: relative;
+  flex-shrink: 0;
+}
+.theme-toggle:hover { border-color: var(--accent); }
+.theme-toggle-thumb {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.25s;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--bg);
+  font-size: 0.75rem;
+}
+[data-theme="dark"] .theme-toggle-thumb {
+  transform: translateX(16px);
+  background: var(--accent-grad);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.theme-toggle-thumb .sun { display: block; }
+.theme-toggle-thumb .moon { display: none; }
+[data-theme="dark"] .theme-toggle-thumb .sun { display: none; }
+[data-theme="dark"] .theme-toggle-thumb .moon { display: block; }
+
+.chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem 2.5rem 1rem;
+  scroll-behavior: smooth;
+}
+.chat::-webkit-scrollbar { width: 6px; }
+.chat::-webkit-scrollbar-track { background: transparent; }
+.chat::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+
+.chat-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* User message */
+.msg-user {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--bg-deep);
+  padding: 0.85rem 1.1rem;
+  border-radius: 18px 18px 4px 18px;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+  border: 1px solid transparent;
+  transition: all 0.3s;
+}
+[data-theme="dark"] .msg-user {
+  border: 1px solid var(--rule-bright);
+  border-radius: 16px 16px 4px 16px;
+  backdrop-filter: blur(10px);
+}
+
+/* AI message */
+.msg-ai { width: 100%; }
+.msg-ai-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.7rem;
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+  font-weight: 500;
+  transition: color 0.3s;
+}
+[data-theme="dark"] .msg-ai-meta { color: var(--accent); font-weight: 600; }
+.msg-ai-meta::before {
+  content: '';
+  width: 16px; height: 16px;
+  background: var(--ink);
+  border-radius: 50%;
+  display: inline-block;
+  transition: all 0.3s;
+}
+[data-theme="dark"] .msg-ai-meta::before {
+  width: 18px; height: 18px;
+  background: var(--accent-grad);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.msg-ai-prose {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+  font-variation-settings: 'opsz' 18;
+}
+.msg-ai-prose p { margin-bottom: 0.85rem; }
+.msg-ai-prose p:last-child { margin-bottom: 0; }
+.msg-ai-prose strong { font-weight: 600; color: var(--ink); }
+.msg-ai-prose em {
+  font-style: italic;
+  font-variation-settings: 'opsz' 18, 'wght' 400;
+  color: var(--ink-soft);
+}
+
+/* Markdown table */
+.md-table-wrap {
+  margin: 1rem 0;
+  background: var(--bg-alt);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.3s;
+}
+[data-theme="dark"] .md-table-wrap {
+  border-radius: 12px;
+  border-color: var(--rule-bright);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+.md-table th {
+  text-align: left;
+  padding: 0.55rem 1rem;
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-mid);
+  font-weight: 500;
+  border-bottom: 1px solid var(--rule);
+  background: rgba(0,0,0,0.02);
+}
+[data-theme="dark"] .md-table th {
+  color: var(--ink-faint);
+  background: rgba(0,0,0,0.2);
+  letter-spacing: 0.18em;
+}
+.md-table td {
+  padding: 0.55rem 1rem;
+  font-family: 'Geist', sans-serif;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.md-table tr:last-child td { border-bottom: none; }
+.md-table td:first-child {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 500;
+  color: var(--ink);
+  font-variation-settings: 'opsz' 18;
+}
+.md-table td.up { color: var(--green); font-family: 'Geist Mono', monospace; font-size: 0.82rem; }
+.md-table td.dn { color: var(--red); font-family: 'Geist Mono', monospace; font-size: 0.82rem; }
+.md-table td.num { font-family: 'Geist Mono', monospace; font-size: 0.84rem; color: var(--ink); }
+
+/* Tool card */
+.tool-card {
+  margin-top: 1.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  padding: 1.2rem 1.4rem 1.1rem;
+  position: relative;
+  box-shadow: var(--shadow-soft);
+  transition: all 0.3s;
+}
+[data-theme="dark"] .tool-card {
+  background: linear-gradient(135deg, rgba(0,212,255,0.06), rgba(61,123,255,0.04));
+  border-color: rgba(0,212,255,0.3);
+  border-radius: 16px;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  overflow: hidden;
+}
+[data-theme="dark"] .tool-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: var(--accent-grad);
+}
+.tool-card-eyebrow {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+[data-theme="dark"] .tool-card-eyebrow::before {
+  content: '';
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+
+.tool-card-prose {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: var(--ink);
+  margin-bottom: 1rem;
+  font-variation-settings: 'opsz' 18;
+}
+.tool-card-prose em { font-style: italic; color: var(--ink-soft); }
+.tool-params {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem 1.5rem;
+  padding: 0.9rem 0;
+  margin: 0 -0.2rem;
+  border-top: 1px dotted var(--rule);
+  border-bottom: 1px dotted var(--rule);
+  margin-bottom: 1rem;
+}
+[data-theme="dark"] .tool-params {
+  border-top-style: solid;
+  border-bottom-style: solid;
+  border-color: var(--rule-bright);
+}
+.tool-param-key {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-mid);
+  display: block;
+  margin-bottom: 0.18rem;
+}
+.tool-param-val {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 600;
+  font-size: 0.98rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-variation-settings: 'opsz' 18;
+}
+.tool-actions {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+}
+.btn-affirm {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.65rem 1.3rem;
+  border-radius: 8px;
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 0.95rem;
+  cursor: pointer;
+  letter-spacing: -0.005em;
+  font-variation-settings: 'opsz' 18;
+  transition: all 0.2s;
+}
+.btn-affirm:hover { background: #a4451f; }
+[data-theme="dark"] .btn-affirm {
+  background: var(--accent-grad);
+  color: var(--bg);
+  box-shadow: 0 0 24px rgba(0,212,255,0.3);
+  font-style: normal;
+  font-weight: 600;
+  font-family: 'Geist', sans-serif;
+}
+[data-theme="dark"] .btn-affirm:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+  box-shadow: 0 0 32px rgba(0,212,255,0.5);
+}
+.btn-decline {
+  background: transparent;
+  color: var(--ink-mid);
+  border: 1px solid var(--rule);
+  padding: 0.65rem 1.1rem;
+  border-radius: 8px;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-decline:hover { color: var(--ink); border-color: var(--ink-mid); }
+
+/* Input bar */
+.input-bar {
+  border-top: 1px solid var(--rule);
+  background: var(--bg-card);
+  padding: 1rem 2.5rem 1.2rem;
+  transition: all 0.3s;
+}
+[data-theme="dark"] .input-bar {
+  background: rgba(8, 12, 22, 0.6);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+.input-bar-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-end;
+  background: var(--bg-alt);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 0.7rem 0.9rem 0.7rem 1.1rem;
+  transition: all 0.2s;
+}
+.input-bar-inner:focus-within {
+  border-color: var(--ink-soft);
+  background: var(--bg-card);
+}
+[data-theme="dark"] .input-bar-inner {
+  border-color: var(--rule-bright);
+}
+[data-theme="dark"] .input-bar-inner:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,212,255,0.1);
+}
+.input-textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  resize: none;
+  font-family: 'Geist', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--ink);
+  padding: 0.3rem 0;
+  letter-spacing: -0.005em;
+  outline: none;
+  min-height: 1.4rem;
+  max-height: 8rem;
+}
+.input-textarea::placeholder {
+  color: var(--ink-faint);
+  font-style: italic;
+  font-family: 'Source Serif 4', serif;
+  font-variation-settings: 'opsz' 18;
+}
+[data-theme="dark"] .input-textarea::placeholder {
+  font-style: normal;
+  font-family: 'Geist', sans-serif;
+}
+.btn-send {
+  background: var(--ink);
+  color: var(--bg);
+  border: none;
+  padding: 0.55rem 1.2rem;
+  border-radius: 9px;
+  font-family: 'Geist', sans-serif;
+  font-weight: 500;
+  font-size: 0.85rem;
+  cursor: pointer;
+  letter-spacing: -0.005em;
+  transition: all 0.2s;
+}
+.btn-send:hover { background: var(--accent); }
+[data-theme="dark"] .btn-send {
+  background: var(--accent-grad);
+  color: var(--bg);
+  font-weight: 600;
+  box-shadow: 0 0 16px rgba(0,212,255,0.3);
+  border-radius: 10px;
+}
+[data-theme="dark"] .btn-send:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sb-logo">
+      <div class="sb-logo-glyph">h</div>
+      <div class="sb-logo-text">Injective AI Hub</div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Wallet</div>
+      <div class="wallet-card">
+        <div class="wallet-dot"></div>
+        <div class="wallet-info">
+          <div class="wallet-tag">Connected</div>
+          <div class="wallet-addr">0x742d…35Ac</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Credits</div>
+      <div class="credits-card">
+        <div class="credits-row">
+          <span class="credits-key">Balance</span>
+          <span class="credits-val hero">$4.27</span>
+        </div>
+        <div class="credits-row">
+          <span class="credits-key">Messages left</span>
+          <span class="credits-val muted">427</span>
+        </div>
+        <div class="credits-row">
+          <span class="credits-key">Wallet USDT</span>
+          <span class="credits-val muted">12.50</span>
+        </div>
+        <div class="credits-foot">$0.01 USDT per message</div>
+      </div>
+      <div class="input-row">
+        <input type="number" value="1.0" />
+        <button class="btn-action">Deposit USDT</button>
+      </div>
+      <div class="bridge-note">No USDT? Bridge from Arbitrum:</div>
+      <div class="input-row">
+        <input type="number" value="10" />
+        <button class="btn-action">Bridge USDC</button>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">YOLO Mode</div>
+      <div class="yolo-row">
+        <div class="yolo-status">
+          <div class="yolo-dot"></div>
+          <span class="yolo-label">Off</span>
+        </div>
+        <button class="yolo-btn">Enable</button>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Try asking</div>
+      <div class="suggestions">
+        <button class="suggestion">What's the BTC price?</button>
+        <button class="suggestion">Show me BTC orderbook</button>
+        <button class="suggestion">What are my balances?</button>
+        <button class="suggestion">Show my positions</button>
+        <button class="suggestion">Bridge 100 USDC to Injective</button>
+      </div>
+    </div>
+
+    <div class="sb-footer">
+      <span class="sb-footer-mark">Powered by Injective</span>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div class="topbar">
+      <div class="topbar-left">
+        <em>Trade</em>
+        <span class="sep">·</span>
+        <em>Analyze</em>
+        <span class="sep">·</span>
+        <em>Bridge</em>
+        <span class="sep">·</span>
+        <em>YOLO</em>
+        &nbsp;&nbsp;—&nbsp;&nbsp;
+        powered by <span class="brand">Claude</span>
+      </div>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+        <div class="theme-toggle-thumb">
+          <span class="sun">☀</span>
+          <span class="moon">☾</span>
+        </div>
+      </button>
+    </div>
+
+    <div class="chat">
+      <div class="chat-inner">
+
+        <div class="msg-user">
+          What's the BTC funding rate right now?
+        </div>
+
+        <div class="msg-ai">
+          <div class="msg-ai-meta">Claude</div>
+          <div class="msg-ai-prose">
+            <p>BTC funding is mildly positive — longs are paying shorts a small premium. Here's the current picture across the majors:</p>
+
+            <div class="md-table-wrap">
+              <table class="md-table">
+                <thead>
+                  <tr>
+                    <th>Pair</th>
+                    <th>Mark Price</th>
+                    <th>Funding (8h)</th>
+                    <th>Open Interest</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>BTC/USDT</td>
+                    <td class="num">$94,247.30</td>
+                    <td class="up">+0.0089%</td>
+                    <td class="num">$4.2M</td>
+                  </tr>
+                  <tr>
+                    <td>ETH/USDT</td>
+                    <td class="num">$3,418.55</td>
+                    <td class="up">+0.0042%</td>
+                    <td class="num">$1.8M</td>
+                  </tr>
+                  <tr>
+                    <td>SOL/USDT</td>
+                    <td class="num">$238.91</td>
+                    <td class="dn">−0.0031%</td>
+                    <td class="num">$612K</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p>For BTC, that's roughly <strong>+0.027% over 24 hours</strong> if rates hold — modest, but it tells you the book is leaning long. SOL is the only major paying shorts at the moment.</p>
+
+            <p>Want me to open a directional position based on this?</p>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-eyebrow">I'd like to do this — confirm?</div>
+          <div class="tool-card-prose">
+            Open a <strong>5×</strong> long position on <strong>BTC/USDT PERP</strong> for <em>$100 of notional</em>.
+          </div>
+          <div class="tool-params">
+            <div>
+              <span class="tool-param-key">Market</span>
+              <span class="tool-param-val">BTC/USDT PERP</span>
+            </div>
+            <div>
+              <span class="tool-param-key">Side</span>
+              <span class="tool-param-val">Long</span>
+            </div>
+            <div>
+              <span class="tool-param-key">Notional</span>
+              <span class="tool-param-val">$100.00 USDT</span>
+            </div>
+            <div>
+              <span class="tool-param-key">Leverage</span>
+              <span class="tool-param-val">5×</span>
+            </div>
+          </div>
+          <div class="tool-actions">
+            <button class="btn-affirm">Yes, do it</button>
+            <button class="btn-decline">Not now</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-bar-inner">
+        <textarea class="input-textarea" rows="1" placeholder="Ask about prices, balances, trades, bridges…"></textarea>
+        <button class="btn-send">Send</button>
+      </div>
+    </div>
+
+  </main>
+
+</div>
+
+<script>
+(function(){
+  const root = document.documentElement;
+  // Init: localStorage > prefers-color-scheme > light
+  const saved = localStorage.getItem('hub-theme');
+  if (saved === 'dark' || saved === 'light') {
+    root.dataset.theme = saved;
+  } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    root.dataset.theme = 'dark';
+  } else {
+    root.dataset.theme = 'light';
+  }
+  // Toggle
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    localStorage.setItem('hub-theme', next);
+  });
+})();
+</script>
+
+</body>
+</html>
