@@ -230,14 +230,14 @@ function Turn({ msg }: { msg: ChatMessage }) {
   )
 }
 
-function Working({ label }: { label: string }) {
+function Working({ label, trail }: { label: string; trail?: string }) {
   return (
     <div className="working">
       <div className="gutter agt">AGT</div>
       <div className="working-text">
         <span className="dots"><span /><span /><span /></span>
         <span>{label}</span>
-        <span className="working-trail">· thinking</span>
+        {trail && <span className="working-trail">· {trail}</span>}
       </div>
     </div>
   )
@@ -1080,7 +1080,7 @@ export default function App() {
               </div>
             )}
 
-            {loading && <Working label={toolStatus || 'Computing'} />}
+            {loading && <Working label={toolStatus || 'Thinking'} />}
 
             {error && (
               <div className="error-banner">
