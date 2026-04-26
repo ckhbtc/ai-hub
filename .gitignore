@@ -10,3 +10,5 @@ CLAUDE.md
 .claude/
 dist/
 *.tsbuildinfo
+DESIGN_HANDOFF.md
+design_handoff_hub_quietdoc/
