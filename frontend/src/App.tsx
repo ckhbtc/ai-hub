@@ -599,9 +599,14 @@ function Sidebar({
 }) {
   const suggestions = [
     'long 50 USDT INJ',
+    'BTC price',
+    'INJ orderbook',
     'show open positions',
-    'close all profitable',
     'funding rates',
+    'my balances',
+    'close all profitable',
+    'bridge 100 USDC',
+    'enable autosign',
   ]
   const shortInj = wallet
     ? `${wallet.injAddress.slice(0, 4)}…${wallet.injAddress.slice(-4)}`
