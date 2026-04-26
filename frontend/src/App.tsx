@@ -1023,8 +1023,8 @@ export default function App() {
   }
 
   function handleSuggest(text: string) {
-    setInput(text)
-    inputRef.current?.focus()
+    if (loading || pendingTool) return
+    handleSend(text)
   }
 
   return (

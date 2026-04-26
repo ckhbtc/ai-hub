@@ -790,7 +790,7 @@ html, body, #root {
   pointer-events: none;
   opacity: 0;
 }
-.composer-textarea:focus + .composer-caret { opacity: 1; }
+.composer-textarea:focus:placeholder-shown + .composer-caret { opacity: 1; }
 
 .composer-foot {
   display: flex;
