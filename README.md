@@ -1,5 +1,7 @@
 # Injective AI Hub
 
+[![build](https://github.com/ckhbtc/ai-hub/actions/workflows/build.yml/badge.svg)](https://github.com/ckhbtc/ai-hub/actions/workflows/build.yml)
+
 A chat-first AI trading terminal for [Injective](https://injective.com) perpetuals. Type a question, pull market data, open and close positions, bridge cross-chain — all from a prompt.
 
 Live: **[hub.inj.so](https://hub.inj.so)**
