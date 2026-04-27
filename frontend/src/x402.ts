@@ -96,36 +96,38 @@ export async function wrapTokens(
 ): Promise<WrapResult> {
   const originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
 
-  onProgress('Switching to Injective EVM…')
-  await switchToInjectiveEvm()
+  try {
+    onProgress('Switching to Injective EVM…')
+    await switchToInjectiveEvm()
 
-  // Step 1: approve native token spend
-  onProgress('Step 1 / 2 — Approve native token (confirm in wallet)…')
-  const approveTxHash = await sendTx({
-    from: params.ethAddress,
-    to:   params.nativeTokenAddress,
-    data: params.approveCalldata,
-  })
-  onProgress(`Approval submitted (${approveTxHash.slice(0, 12)}…) — waiting for confirmation…`)
-  await waitForReceipt(approveTxHash)
+    // Step 1: approve native token spend
+    onProgress('Step 1 / 2 — Approve native token (confirm in wallet)…')
+    const approveTxHash = await sendTx({
+      from: params.ethAddress,
+      to:   params.nativeTokenAddress,
+      data: params.approveCalldata,
+    })
+    onProgress(`Approval submitted (${approveTxHash.slice(0, 12)}…) — waiting for confirmation…`)
+    await waitForReceipt(approveTxHash)
 
-  // Step 2: deposit into wrapper
-  onProgress('Step 2 / 2 — Deposit to wrapper (confirm in wallet)…')
-  const depositTxHash = await sendTx({
-    from: params.ethAddress,
-    to:   params.wrappedTokenAddress,
-    data: params.depositCalldata,
-  })
-  onProgress(`Deposit submitted (${depositTxHash.slice(0, 12)}…) — waiting for confirmation…`)
-  await waitForReceipt(depositTxHash)
+    // Step 2: deposit into wrapper
+    onProgress('Step 2 / 2 — Deposit to wrapper (confirm in wallet)…')
+    const depositTxHash = await sendTx({
+      from: params.ethAddress,
+      to:   params.wrappedTokenAddress,
+      data: params.depositCalldata,
+    })
+    onProgress(`Deposit submitted (${depositTxHash.slice(0, 12)}…) — waiting for confirmation…`)
+    await waitForReceipt(depositTxHash)
 
-  await switchBackTo(originalChainId)
-
-  return {
-    approveTxHash,
-    depositTxHash,
-    amount: params.amount,
-    token: params.token === 'USDT' ? 'WUSDT' : 'WUSDC',
+    return {
+      approveTxHash,
+      depositTxHash,
+      amount: params.amount,
+      token: params.token === 'USDT' ? 'WUSDT' : 'WUSDC',
+    }
+  } finally {
+    await switchBackTo(originalChainId)
   }
 }
 
@@ -153,24 +155,26 @@ export async function unwrapTokens(
 ): Promise<UnwrapResult> {
   const originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
 
-  onProgress('Switching to Injective EVM…')
-  await switchToInjectiveEvm()
+  try {
+    onProgress('Switching to Injective EVM…')
+    await switchToInjectiveEvm()
 
-  onProgress('Withdraw from wrapper (confirm in wallet)…')
-  const withdrawTxHash = await sendTx({
-    from: params.ethAddress,
-    to:   params.wrappedTokenAddress,
-    data: params.withdrawCalldata,
-  })
-  onProgress(`Withdrawal submitted (${withdrawTxHash.slice(0, 12)}…) — waiting for confirmation…`)
-  await waitForReceipt(withdrawTxHash)
+    onProgress('Withdraw from wrapper (confirm in wallet)…')
+    const withdrawTxHash = await sendTx({
+      from: params.ethAddress,
+      to:   params.wrappedTokenAddress,
+      data: params.withdrawCalldata,
+    })
+    onProgress(`Withdrawal submitted (${withdrawTxHash.slice(0, 12)}…) — waiting for confirmation…`)
+    await waitForReceipt(withdrawTxHash)
 
-  await switchBackTo(originalChainId)
-
-  return {
-    withdrawTxHash,
-    amount: params.amount,
-    token: params.token === 'WUSDT' ? 'USDT' : 'USDC',
+    return {
+      withdrawTxHash,
+      amount: params.amount,
+      token: params.token === 'WUSDT' ? 'USDT' : 'USDC',
+    }
+  } finally {
+    await switchBackTo(originalChainId)
   }
 }
 
@@ -239,93 +243,95 @@ export async function makeX402Payment(
   if (!req) throw new Error('No Injective EVM (eip155:1776) payment option available')
 
   // 3. Switch to Injective EVM and sign
-  onProgress('Switching to Injective EVM…')
-  await switchToInjectiveEvm()
+  try {
+    onProgress('Switching to Injective EVM…')
+    await switchToInjectiveEvm()
 
-  // Fetch token name for EIP-712 domain (needed for DOMAIN_SEPARATOR matching)
-  onProgress('Reading token metadata…')
-  const tokenNameHex = await window.ethereum!.request({
-    method: 'eth_call',
-    params: [{
-      to: req.asset,
-      data: '0x06fdde03', // name() selector
-    }, 'latest'],
-  }) as string
-  const tokenName = decodeAbiString(tokenNameHex)
+    // Fetch token name for EIP-712 domain (needed for DOMAIN_SEPARATOR matching)
+    onProgress('Reading token metadata…')
+    const tokenNameHex = await window.ethereum!.request({
+      method: 'eth_call',
+      params: [{
+        to: req.asset,
+        data: '0x06fdde03', // name() selector
+      }, 'latest'],
+    }) as string
+    const tokenName = decodeAbiString(tokenNameHex)
 
-  // Build the EIP-712 payload for TransferWithAuthorization
-  const nonce = '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-    .map(b => b.toString(16).padStart(2, '0')).join('')
-  const now = Math.floor(Date.now() / 1000)
-  const validAfter  = (now - 30).toString()  // 30s grace
-  const validBefore = (now + req.maxTimeoutSeconds).toString()
+    // Build the EIP-712 payload for TransferWithAuthorization
+    const nonce = '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map(b => b.toString(16).padStart(2, '0')).join('')
+    const now = Math.floor(Date.now() / 1000)
+    const validAfter  = (now - 30).toString()  // 30s grace
+    const validBefore = (now + req.maxTimeoutSeconds).toString()
 
-  const typedData = {
-    types: {
-      EIP712Domain: [
-        { name: 'name',              type: 'string'  },
-        { name: 'version',           type: 'string'  },
-        { name: 'chainId',           type: 'uint256' },
-        { name: 'verifyingContract', type: 'address' },
-      ],
-      TransferWithAuthorization: [
-        { name: 'from',        type: 'address' },
-        { name: 'to',          type: 'address' },
-        { name: 'value',       type: 'uint256' },
-        { name: 'validAfter',  type: 'uint256' },
-        { name: 'validBefore', type: 'uint256' },
-        { name: 'nonce',       type: 'bytes32' },
-      ],
-    },
-    primaryType: 'TransferWithAuthorization' as const,
-    domain: {
-      name:              tokenName,
-      version:           '2',
-      chainId:           1776,
-      verifyingContract: req.asset,
-    },
-    message: {
-      from:        params.ethAddress,
-      to:          req.payTo,
-      value:       req.maxAmountRequired,
-      validAfter,
-      validBefore,
-      nonce,
-    },
-  }
+    const typedData = {
+      types: {
+        EIP712Domain: [
+          { name: 'name',              type: 'string'  },
+          { name: 'version',           type: 'string'  },
+          { name: 'chainId',           type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+        ],
+        TransferWithAuthorization: [
+          { name: 'from',        type: 'address' },
+          { name: 'to',          type: 'address' },
+          { name: 'value',       type: 'uint256' },
+          { name: 'validAfter',  type: 'uint256' },
+          { name: 'validBefore', type: 'uint256' },
+          { name: 'nonce',       type: 'bytes32' },
+        ],
+      },
+      primaryType: 'TransferWithAuthorization' as const,
+      domain: {
+        name:              tokenName,
+        version:           '2',
+        chainId:           1776,
+        verifyingContract: req.asset,
+      },
+      message: {
+        from:        params.ethAddress,
+        to:          req.payTo,
+        value:       req.maxAmountRequired,
+        validAfter,
+        validBefore,
+        nonce,
+      },
+    }
 
-  onProgress('Sign payment authorization (confirm in wallet)…')
-  const signature = await window.ethereum!.request({
-    method: 'eth_signTypedData_v4',
-    params: [params.ethAddress, JSON.stringify(typedData)],
-  }) as string
+    onProgress('Sign payment authorization (confirm in wallet)…')
+    const signature = await window.ethereum!.request({
+      method: 'eth_signTypedData_v4',
+      params: [params.ethAddress, JSON.stringify(typedData)],
+    }) as string
 
-  // 4. Build PAYMENT header and retry
-  const paymentPayload = {
-    signature,
-    authorization: {
-      from:        params.ethAddress,
-      to:          req.payTo,
-      value:       req.maxAmountRequired,
-      validAfter,
-      validBefore,
-      nonce,
-    },
-  }
+    // 4. Build PAYMENT header and retry
+    const paymentPayload = {
+      signature,
+      authorization: {
+        from:        params.ethAddress,
+        to:          req.payTo,
+        value:       req.maxAmountRequired,
+        validAfter,
+        validBefore,
+        nonce,
+      },
+    }
 
-  onProgress('Sending payment…')
-  const paidResp = await fetch(params.url, {
-    headers: { 'PAYMENT': btoa(JSON.stringify(paymentPayload)) },
-  })
+    onProgress('Sending payment…')
+    const paidResp = await fetch(params.url, {
+      headers: { 'PAYMENT': btoa(JSON.stringify(paymentPayload)) },
+    })
 
-  await switchBackTo(originalChainId)
-
-  const body = await paidResp.text()
-  return {
-    success:        paidResp.ok,
-    responseStatus: paidResp.status,
-    responseBody:   body.slice(0, 2000),
-    paidAmount:     req.maxAmountRequired,
+    const body = await paidResp.text()
+    return {
+      success:        paidResp.ok,
+      responseStatus: paidResp.status,
+      responseBody:   body.slice(0, 2000),
+      paidAmount:     req.maxAmountRequired,
+    }
+  } finally {
+    await switchBackTo(originalChainId)
   }
 }
 

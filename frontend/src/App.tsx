@@ -380,6 +380,17 @@ async function waitForTxReceipt(txHash: string, maxMs = 90_000) {
   throw new Error('Timed out waiting for confirmation')
 }
 
+async function switchBackToChain(chainId: string): Promise<void> {
+  try {
+    await window.ethereum!.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId }],
+    })
+  } catch {
+    // ignore
+  }
+}
+
 function CreditsSection({ wallet }: { wallet: WalletInfo }) {
   const [credits, setCredits] = useState<number | null>(null)
   const [facilitator, setFacilitator] = useState('')
@@ -449,7 +460,9 @@ function CreditsSection({ wallet }: { wallet: WalletInfo }) {
 
   async function handleDeposit() {
     setBusy(true); setErr(null)
+    let originalChainId: string | null = null
     try {
+      originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
       const amount = parseFloat(depositAmount)
       if (!amount || amount <= 0) throw new Error('Invalid amount')
       if (!facilitator) throw new Error('Facilitator not configured')
@@ -478,6 +491,7 @@ function CreditsSection({ wallet }: { wallet: WalletInfo }) {
       setErr((e as Error).message)
       setStatus('')
     } finally {
+      if (originalChainId) await switchBackToChain(originalChainId)
       setBusy(false)
     }
   }

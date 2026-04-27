@@ -197,68 +197,69 @@ export async function executeBridge(
   // Remember the user's current chain so we can switch back after bridging.
   const originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
 
-  // 1. Fetch full calldata (with authority addresses).
-  onProgress('Fetching bridge calldata from DeBridge…')
-  const raw = await callDln({
-    srcChainId:                     ARBITRUM_ID.toString(),
-    srcChainTokenIn:                BRIDGE_SRC_TOKEN,
-    srcChainTokenInAmount:          srcAmountBase,
-    dstChainId:                     INJECTIVE_DLN.toString(),
-    dstChainTokenOut:               BRIDGE_DST_TOKEN,
-    dstChainTokenOutRecipient:      recipientEvm,
-    srcChainOrderAuthorityAddress:  senderEvm,
-    dstChainOrderAuthorityAddress:  recipientEvm,
-  })
+  try {
+    // 1. Fetch full calldata (with authority addresses).
+    onProgress('Fetching bridge calldata from DeBridge…')
+    const raw = await callDln({
+      srcChainId:                     ARBITRUM_ID.toString(),
+      srcChainTokenIn:                BRIDGE_SRC_TOKEN,
+      srcChainTokenInAmount:          srcAmountBase,
+      dstChainId:                     INJECTIVE_DLN.toString(),
+      dstChainTokenOut:               BRIDGE_DST_TOKEN,
+      dstChainTokenOutRecipient:      recipientEvm,
+      srcChainOrderAuthorityAddress:  senderEvm,
+      dstChainOrderAuthorityAddress:  recipientEvm,
+    })
 
-  if (!raw.tx?.to || !raw.tx?.data) {
-    throw new Error('DeBridge did not return transaction calldata')
-  }
-  const est = raw.estimation
-  if (!est) throw new Error('No estimation in DeBridge response')
+    if (!raw.tx?.to || !raw.tx?.data) {
+      throw new Error('DeBridge did not return transaction calldata')
+    }
+    const est = raw.estimation
+    if (!est) throw new Error('No estimation in DeBridge response')
 
-  const estimation: BridgeEstimation = {
-    srcAmount:     amount,
-    srcAmountBase,
-    dstAmount:     fromBase(est.dstChainTokenOut.amount, est.dstChainTokenOut.decimals),
-    dstAmountBase: est.dstChainTokenOut.amount,
-    protocolFee:   raw.protocolFee ?? '0',
-    fixFeeWei:     raw.fixFee ?? '1000000000000000',
-  }
+    const estimation: BridgeEstimation = {
+      srcAmount:     amount,
+      srcAmountBase,
+      dstAmount:     fromBase(est.dstChainTokenOut.amount, est.dstChainTokenOut.decimals),
+      dstAmountBase: est.dstChainTokenOut.amount,
+      protocolFee:   raw.protocolFee ?? '0',
+      fixFeeWei:     raw.fixFee ?? '1000000000000000',
+    }
 
-  // 2. Switch MetaMask to Arbitrum.
-  onProgress('Switching to Arbitrum…')
-  await switchToArbitrum()
+    // 2. Switch MetaMask to Arbitrum.
+    onProgress('Switching to Arbitrum…')
+    await switchToArbitrum()
 
-  // 3. Approve USDC to deBridge spender.
-  const spender = raw.tx.allowanceTarget ?? raw.tx.to
-  onProgress('Step 1 / 2 — Approve USDC (confirm in wallet)…')
-  const approveData     = encodeApprove(spender, BigInt(srcAmountBase))
-  const approveTxHash   = await sendMM({
-    from: senderEvm,
-    to:   BRIDGE_SRC_TOKEN,
-    data: approveData,
-  })
+    // 3. Approve USDC to deBridge spender.
+    const spender = raw.tx.allowanceTarget ?? raw.tx.to
+    onProgress('Step 1 / 2 — Approve USDC (confirm in wallet)…')
+    const approveData     = encodeApprove(spender, BigInt(srcAmountBase))
+    const approveTxHash   = await sendMM({
+      from: senderEvm,
+      to:   BRIDGE_SRC_TOKEN,
+      data: approveData,
+    })
 
-  // 4. Wait for approval to be mined (Arbitrum is fast ~1–2 s).
-  onProgress(`Approval submitted (${approveTxHash.slice(0, 12)}…) — waiting for confirmation…`)
-  await waitForReceipt(approveTxHash)
+    // 4. Wait for approval to be mined (Arbitrum is fast ~1–2 s).
+    onProgress(`Approval submitted (${approveTxHash.slice(0, 12)}…) — waiting for confirmation…`)
+    await waitForReceipt(approveTxHash)
 
-  // 5. Submit bridge tx with ETH fix fee.
-  onProgress('Step 2 / 2 — Bridge transaction (confirm in wallet)…')
-  const bridgeTxHash = await sendMM({
-    from:  senderEvm,
-    to:    raw.tx.to,
-    data:  raw.tx.data,
-    value: raw.tx.value ?? raw.fixFee,
-  })
+    // 5. Submit bridge tx with ETH fix fee.
+    onProgress('Step 2 / 2 — Bridge transaction (confirm in wallet)…')
+    const bridgeTxHash = await sendMM({
+      from:  senderEvm,
+      to:    raw.tx.to,
+      data:  raw.tx.data,
+      value: raw.tx.value ?? raw.fixFee,
+    })
 
-  // Switch back to the user's original chain after bridging.
-  await switchBackTo(originalChainId)
-
-  return {
-    approveTxHash,
-    bridgeTxHash,
-    orderId:    raw.orderId ?? '',
-    estimation,
+    return {
+      approveTxHash,
+      bridgeTxHash,
+      orderId:    raw.orderId ?? '',
+      estimation,
+    }
+  } finally {
+    await switchBackTo(originalChainId)
   }
 }
