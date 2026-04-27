@@ -71,7 +71,7 @@ export function x402PaymentGate() {
     }
 
     // Deduct credit
-    if (!deduct(evmAddress)) {
+    if (!(await deduct(evmAddress))) {
       return c.json({
         error: 'insufficient_credits',
         message: 'Credit deduction failed. Please try again.',
