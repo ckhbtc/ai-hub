@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { connectMetaMask, isMetaMaskAvailable, onAccountsChanged, type WalletInfo } from './wallet'
+import { connectMetaMask, isMetaMaskAvailable, onAccountsChanged, signWalletMessage, type WalletInfo } from './wallet'
 import { isAutoSignActive, enableAutoSign, disableAutoSign } from './autosign'
 import { openTrade } from './tx'
 import { closeTrade } from './tx'
 import { executeBridge } from './bridge'
 import { resolveMarket } from './injective'
-import { sendChat, continueChatAfterTool, getCredits, submitDeposit, type ConversationMessage, type BrowserToolPayload } from './api'
+import { createAuthSession, requestAuthChallenge, sendChat, continueChatAfterTool, getCredits, submitDeposit, type ConversationMessage, type BrowserToolPayload } from './api'
 import { wrapTokens, unwrapTokens, makeX402Payment } from './x402'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -747,6 +747,7 @@ function initialTheme(): Theme {
 
 export default function App() {
   const [wallet,      setWallet]      = useState<WalletInfo | null>(null)
+  const [authToken,   setAuthToken]   = useState<string | null>(null)
   const [autoSign,    setAutoSign]    = useState(false)
   const [messages,    setMessages]    = useState<ChatMessage[]>([])
   const [input,       setInput]       = useState('')
@@ -781,6 +782,7 @@ export default function App() {
     return onAccountsChanged(injAddr => {
       if (!injAddr) {
         setWallet(null)
+        setAuthToken(null)
         setAutoSign(false)
       }
     })
@@ -790,7 +792,11 @@ export default function App() {
     try {
       setError(null)
       const info = await connectMetaMask()
+      const challenge = await requestAuthChallenge(info.ethAddress)
+      const signature = await signWalletMessage(info.ethAddress, challenge.message)
+      const session = await createAuthSession(info.ethAddress, challenge.message, signature)
       setWallet(info)
+      setAuthToken(session.token)
     } catch (e) { setError((e as Error).message) }
   }
 
@@ -845,7 +851,7 @@ export default function App() {
             res.browserTool.pendingMessages,
             res.browserTool.id,
             result, toolError,
-            wallet?.injAddress, wallet?.ethAddress,
+            wallet?.injAddress, wallet?.ethAddress, authToken ?? undefined,
           )
           await handleChatResponse(cont)
         } catch (e) { setError((e as Error).message) }
@@ -872,7 +878,7 @@ export default function App() {
     setLoading(true)
     const t0 = performance.now()
     try {
-      const res = await sendChat(conversationRef.current, wallet?.injAddress, wallet?.ethAddress)
+      const res = await sendChat(conversationRef.current, wallet?.injAddress, wallet?.ethAddress, authToken ?? undefined)
       setLatency(Math.round(performance.now() - t0))
       await handleChatResponse(res)
     } catch (e) { setError((e as Error).message) }
@@ -992,7 +998,7 @@ export default function App() {
     try {
       const res = await continueChatAfterTool(
         pendingMessages, browserTool.id, result, toolError,
-        wallet?.injAddress, wallet?.ethAddress,
+        wallet?.injAddress, wallet?.ethAddress, authToken ?? undefined,
       )
       await handleChatResponse(res)
     } catch (e) { setError((e as Error).message) }
@@ -1008,7 +1014,7 @@ export default function App() {
     try {
       const res = await continueChatAfterTool(
         pendingMessages, browserTool.id, undefined, 'User cancelled the action',
-        wallet?.injAddress, wallet?.ethAddress,
+        wallet?.injAddress, wallet?.ethAddress, authToken ?? undefined,
       )
       await handleChatResponse(res)
     } catch (e) { setError((e as Error).message) }

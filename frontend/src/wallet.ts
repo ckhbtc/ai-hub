@@ -60,6 +60,16 @@ export async function connectMetaMask(): Promise<WalletInfo> {
   return { ethAddress, injAddress }
 }
 
+export async function signWalletMessage(ethAddress: string, message: string): Promise<string> {
+  if (!window.ethereum) {
+    throw new Error('MetaMask not detected. Please install MetaMask.')
+  }
+  return window.ethereum.request({
+    method: 'personal_sign',
+    params: [message, ethAddress],
+  }) as Promise<string>
+}
+
 export function getInjAddress(ethAddress: string): string {
   return Address.fromHex(ethAddress).toBech32()
 }

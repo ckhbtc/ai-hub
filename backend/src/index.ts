@@ -10,12 +10,14 @@ import { serve } from '@hono/node-server'
 import { processChat, continueAfterBrowserTool } from './chat'
 import type { ConversationMessage } from './chat'
 import { x402PaymentGate } from './x402-middleware'
+import { assertSameWallet, createChallenge, createSession, getSessionAddress } from './sessions'
 
 const app = new Hono()
 const PORT = parseInt(process.env.PORT ?? '3001', 10)
 
 app.use('*', cors({
   origin: '*',
+  allowHeaders: ['Content-Type', 'Authorization', 'x-eth-address'],
   exposeHeaders: ['payment-required', 'PAYMENT-REQUIRED'],
 }))
 
@@ -27,6 +29,35 @@ app.use('/*', serveStatic({ root: path.relative(process.cwd(), FRONTEND_DIR) }))
 
 app.get('/health', (c) => {
   return c.json({ status: 'ok', model: process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5-20251001' })
+})
+
+// ─── Wallet auth ─────────────────────────────────────────────────────────────
+
+app.post('/api/auth/nonce', async (c) => {
+  try {
+    const { address } = await c.req.json() as { address?: string }
+    if (!address) return c.json({ error: 'address is required' }, 400)
+    const challenge = createChallenge(address)
+    return c.json({ message: challenge.message, expiresAt: challenge.expiresAt })
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+  }
+})
+
+app.post('/api/auth/session', async (c) => {
+  try {
+    const { address, message, signature } = await c.req.json() as {
+      address?: string
+      message?: string
+      signature?: string
+    }
+    if (!address || !message || !signature) {
+      return c.json({ error: 'address, message, and signature are required' }, 400)
+    }
+    return c.json(await createSession(address, message, signature))
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 401)
+  }
 })
 
 // ─── x402 payment gate on chat routes ────────────────────────────────────────
@@ -64,6 +95,15 @@ app.post('/api/chat/continue', async (c) => {
 
     if (!Array.isArray(pendingMessages) || !toolId) {
       return c.json({ error: 'pendingMessages and toolId are required' }, 400)
+    }
+    if (process.env.FACILITATOR_PRIVATE_KEY) {
+      const sessionAddress = getSessionAddress(c.req.header('authorization'))
+      if (!sessionAddress) {
+        return c.json({ error: 'wallet_session_required', message: 'Connect and sign in with your wallet to continue.' }, 401)
+      }
+      if (!assertSameWallet(sessionAddress, c.req.header('x-eth-address'))) {
+        return c.json({ error: 'wallet_mismatch', message: 'Wallet session does not match the connected address.' }, 401)
+      }
     }
 
     const result = await continueAfterBrowserTool(

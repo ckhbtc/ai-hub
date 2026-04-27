@@ -21,6 +21,47 @@ export type ChatResponse =
   | { type: 'text';         text: string }
   | { type: 'browser_tool'; text?: string; browserTool: BrowserToolPayload }
 
+export interface AuthChallenge {
+  message: string
+  expiresAt: number
+}
+
+export interface AuthSession {
+  token: string
+  expiresAt: number
+  address: string
+}
+
+export async function requestAuthChallenge(ethAddress: string): Promise<AuthChallenge> {
+  const res = await fetch(`${BASE}/api/auth/nonce`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: ethAddress }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+    throw new Error(err.error ?? res.statusText)
+  }
+  return res.json()
+}
+
+export async function createAuthSession(
+  ethAddress: string,
+  message: string,
+  signature: string,
+): Promise<AuthSession> {
+  const res = await fetch(`${BASE}/api/auth/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: ethAddress, message, signature }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+    throw new Error(err.error ?? res.statusText)
+  }
+  return res.json()
+}
+
 // ─── Credits API ─────────────────────────────────────────────────────────────
 
 export async function getCredits(ethAddress: string): Promise<{
@@ -55,9 +96,11 @@ export async function sendChat(
   messages:      ConversationMessage[],
   walletAddress?: string,
   ethAddress?:    string,
+  authToken?:     string,
 ): Promise<ChatResponse> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (ethAddress) headers['x-eth-address'] = ethAddress
+  if (authToken) headers.authorization = `Bearer ${authToken}`
 
   const res = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
@@ -82,9 +125,11 @@ export async function continueChatAfterTool(
   toolError?:      string,
   walletAddress?:  string,
   ethAddress?:     string,
+  authToken?:      string,
 ): Promise<ChatResponse> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (ethAddress) headers['x-eth-address'] = ethAddress
+  if (authToken) headers.authorization = `Bearer ${authToken}`
 
   const res = await fetch(`${BASE}/api/chat/continue`, {
     method: 'POST',

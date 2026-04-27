@@ -9,6 +9,7 @@
 
 import type { Context, Next } from 'hono'
 import { getBalance, deduct, getCostPerMessage, getFacilitatorAddress } from './credits'
+import { assertSameWallet, getSessionAddress } from './sessions'
 
 export function x402PaymentGate() {
   return async (c: Context, next: Next) => {
@@ -17,13 +18,18 @@ export function x402PaymentGate() {
       return next()
     }
 
-    // Check for wallet address in the request body
-    // We need to peek at the body without consuming it
+    const sessionAddress = getSessionAddress(c.req.header('authorization'))
+    if (!sessionAddress) {
+      return c.json({
+        error: 'wallet_session_required',
+        message: 'Connect and sign in with your wallet to use the chat.',
+      }, 401)
+    }
+
+    // Check for wallet address in the request body. Hono caches parsed JSON,
+    // so the route handler can read the body again after this middleware.
     const body = await c.req.json()
     const wallet = body.walletAddress as string | undefined
-
-    // Re-attach body for downstream handlers (Hono caches parsed body)
-    // No need to re-attach — Hono's c.req.json() caches the result
 
     if (!wallet) {
       return c.json({
@@ -34,18 +40,21 @@ export function x402PaymentGate() {
       }, 402)
     }
 
-    // Convert Injective bech32 to EVM address if needed
-    let evmAddress = wallet.toLowerCase()
+    let evmAddress = sessionAddress
     if (wallet.startsWith('inj1')) {
       // The frontend sends injAddress as walletAddress, but credits are keyed by ETH address
-      // Check the x-eth-address header that the frontend should send
-      evmAddress = (c.req.header('x-eth-address') ?? '').toLowerCase()
-      if (!evmAddress) {
+      // Check the x-eth-address header against the signed session.
+      if (!assertSameWallet(sessionAddress, c.req.header('x-eth-address'))) {
         return c.json({
-          error: 'wallet_required',
-          message: 'EVM address required for credit check. Connect your wallet.',
-        }, 402)
+          error: 'wallet_mismatch',
+          message: 'Wallet session does not match the connected address.',
+        }, 401)
       }
+    } else if (!assertSameWallet(sessionAddress, wallet)) {
+      return c.json({
+        error: 'wallet_mismatch',
+        message: 'Wallet session does not match the connected address.',
+      }, 401)
     }
 
     const balance = getBalance(evmAddress)
