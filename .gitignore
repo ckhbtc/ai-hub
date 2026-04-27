@@ -7,6 +7,7 @@ node_modules/
 .DS_Store
 .vscode/
 CLAUDE.md
+AGENTS.md
 DEPLOYMENT.md
 .claude/
 dist/
