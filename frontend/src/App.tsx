@@ -7,6 +7,7 @@ import { executeBridge } from './bridge'
 import { resolveMarket } from './injective'
 import { createAuthSession, requestAuthChallenge, sendChat, continueChatAfterTool, getCredits, submitDeposit, type ConversationMessage, type BrowserToolPayload } from './api'
 import { wrapTokens, unwrapTokens, makeX402Payment } from './x402'
+import { validateBrowserToolPayload } from './toolValidation'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -886,7 +887,8 @@ export default function App() {
   }
 
   const executeBrowserTool = useCallback(async (tool: BrowserToolPayload) => {
-    const { name, input: toolInput } = tool
+    const safeTool = validateBrowserToolPayload(tool)
+    const { name, input: toolInput } = safeTool
     setToolStatus(`Executing ${name}…`)
 
     try {
