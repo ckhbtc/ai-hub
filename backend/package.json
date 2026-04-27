@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "test": "node --import tsx --test src/credits.test.ts src/sessions.test.ts src/x402-middleware.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

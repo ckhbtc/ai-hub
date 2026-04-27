@@ -12,7 +12,9 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { createPublicClient, http, defineChain } from 'viem'
 
-const CREDITS_FILE = path.resolve(process.cwd(), 'credits.json')
+const CREDITS_FILE = process.env.CREDITS_FILE
+  ? path.resolve(process.env.CREDITS_FILE)
+  : path.resolve(process.cwd(), 'credits.json')
 const COST_PER_MESSAGE = 0.01 // USDT
 const COST_PER_MESSAGE_MICRO = 10_000n
 const USDT_DECIMALS = 6
@@ -56,6 +58,11 @@ interface LegacyCreditStore {
 
 let _store: CreditStore | null = null
 let _mutationQueue: Promise<void> = Promise.resolve()
+
+export function __resetCreditStoreForTests() {
+  _store = null
+  _mutationQueue = Promise.resolve()
+}
 
 function emptyStore(): CreditStore {
   return { schemaVersion: 2, balancesMicroUsdt: {}, processedTxs: {}, pendingTxs: {} }
