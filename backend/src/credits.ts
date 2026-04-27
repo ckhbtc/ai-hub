@@ -151,6 +151,17 @@ export async function deduct(wallet: string): Promise<boolean> {
   })
 }
 
+export async function refund(wallet: string): Promise<number> {
+  return withStoreMutation(store => {
+    const key = wallet.toLowerCase()
+    const bal = getBalanceMicro(store, key)
+    const next = bal + COST_PER_MESSAGE_MICRO
+    store.balancesMicroUsdt[key] = next.toString()
+    saveStore()
+    return fromMicroUsdt(next)
+  })
+}
+
 export function getCostPerMessage(): number {
   return COST_PER_MESSAGE
 }

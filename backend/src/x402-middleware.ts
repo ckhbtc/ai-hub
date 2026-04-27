@@ -30,6 +30,9 @@ export function x402PaymentGate() {
     // so the route handler can read the body again after this middleware.
     const body = await c.req.json()
     const wallet = body.walletAddress as string | undefined
+    if (!Array.isArray(body.messages)) {
+      return c.json({ error: 'messages must be an array' }, 400)
+    }
 
     if (!wallet) {
       return c.json({
@@ -78,6 +81,7 @@ export function x402PaymentGate() {
       }, 402)
     }
 
+    c.set('chargedWallet', evmAddress)
     return next()
   }
 }

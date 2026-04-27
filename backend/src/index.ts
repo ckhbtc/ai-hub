@@ -12,7 +12,7 @@ import type { ConversationMessage } from './chat'
 import { x402PaymentGate } from './x402-middleware'
 import { assertSameWallet, createChallenge, createSession, getSessionAddress } from './sessions'
 
-const app = new Hono()
+const app = new Hono<{ Variables: { chargedWallet?: string } }>()
 const PORT = parseInt(process.env.PORT ?? '3001', 10)
 
 app.use('*', cors({
@@ -82,6 +82,15 @@ app.post('/api/chat', async (c) => {
     const result = await processChat(messages, walletAddress)
     return c.json(result)
   } catch (err) {
+    const chargedWallet = c.get('chargedWallet') as string | undefined
+    if (chargedWallet) {
+      try {
+        const { refund } = await import('./credits')
+        await refund(chargedWallet)
+      } catch (refundErr) {
+        console.error('/api/chat refund error:', refundErr)
+      }
+    }
     console.error('/api/chat error:', err)
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
   }
