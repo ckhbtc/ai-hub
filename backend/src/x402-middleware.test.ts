@@ -17,9 +17,11 @@ let sessions: typeof import('./sessions')
 const account = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
 
 test.before(async () => {
-  ;({ x402PaymentGate } = await import('./x402-middleware'))
-  credits = await import('./credits')
+  // Load sessions and credits before the middleware so dynamic imports here resolve
+  // to the same module instances the middleware will pick up via static import.
   sessions = await import('./sessions')
+  credits = await import('./credits')
+  ;({ x402PaymentGate } = await import('./x402-middleware'))
 })
 
 function makeApp() {
@@ -79,4 +81,23 @@ test('charges a verified session and exposes the charged wallet', async () => {
   assert.equal(res.status, 200)
   assert.equal(body.chargedWallet, account.address.toLowerCase())
   assert.equal(credits.getBalance(account.address), 0)
+})
+
+test('rejects an inj1 walletAddress when the x-eth-address header is missing', async () => {
+  const app = makeApp()
+  const token = await sessionToken()
+  const res = await app.request('/api/chat', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: [{ role: 'user', content: 'hi' }],
+      walletAddress: 'inj1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+    }),
+  })
+
+  assert.equal(res.status, 401)
+  assert.equal(credits.getBalance(account.address), 0.01)
 })
