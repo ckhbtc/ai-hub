@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { privateKeyToAccount } from 'viem/accounts'
-import { createChallenge, createSession, getSessionAddress } from './sessions'
+import { assertSameWallet, createChallenge, createSession, getSessionAddress } from './sessions'
 
 const account = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
 
@@ -24,4 +24,12 @@ test('rejects a signature from the wrong wallet', async () => {
     createSession(account.address, challenge.message, signature),
     /signature did not match/i,
   )
+})
+
+test('assertSameWallet rejects missing input so wallet checks cannot be bypassed', () => {
+  const expected = account.address.toLowerCase()
+  assert.equal(assertSameWallet(expected, undefined), false)
+  assert.equal(assertSameWallet(expected, ''), false)
+  assert.equal(assertSameWallet(expected, account.address), true)
+  assert.equal(assertSameWallet(expected, '0xnotanaddress'), false)
 })

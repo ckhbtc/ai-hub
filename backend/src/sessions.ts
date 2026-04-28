@@ -107,7 +107,7 @@ export function getSessionAddress(authHeader: string | undefined): string | null
 }
 
 export function assertSameWallet(expected: string, provided?: string): boolean {
-  if (!provided) return true
+  if (!provided) return false
   try {
     return normalizeAddress(provided) === expected
   } catch {
