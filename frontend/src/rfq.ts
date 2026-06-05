@@ -112,19 +112,19 @@ export function buildRfqOpenInput({
   market,
   oraclePrice,
   side,
-  notionalUsdt,
+  notionalUsdc,
   leverage,
   slippage,
 }: {
   market: PerpMarket
   oraclePrice: Decimal.Value
   side: 'long' | 'short'
-  notionalUsdt: Decimal.Value
+  notionalUsdc: Decimal.Value
   leverage: Decimal.Value
   slippage: Decimal.Value
 }): RfqOrderInput {
   const price = new Decimal(oraclePrice)
-  const notional = new Decimal(notionalUsdt)
+  const notional = new Decimal(notionalUsdc)
   const leverageDec = new Decimal(leverage)
   if (!price.isFinite() || price.lte(0)) throw new Error('Oracle price is unavailable')
   if (!notional.isFinite() || notional.lte(0)) throw new Error('Notional must be positive')

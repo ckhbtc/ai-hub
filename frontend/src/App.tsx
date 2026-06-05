@@ -243,7 +243,7 @@ export default function App() {
             ethAddress:  wallet.ethAddress,
             market,
             side:         toolInput.side as 'long' | 'short',
-            notionalUsdt: toolInput.notional_usdt as number,
+            notionalUsdc: toolInput.notional_usdc as number,
             leverage:     toolInput.leverage as number,
             slippage:     (toolInput.slippage as number | undefined) ?? 0.01,
             onProgress:   setToolStatus,
@@ -443,7 +443,7 @@ export default function App() {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask, query, or trade. Try: short 50 USDT TIA"
+                  placeholder="Ask, query, or trade. Try: short 50 USDC TIA"
                   disabled={loading || !!pendingTool}
                 />
                 <span className="composer-caret" />
@@ -454,7 +454,7 @@ export default function App() {
                     <span className="hint"><kbd className="kbd">/</kbd><span className="hint-label">commands</span></span>
                   </div>
                   <div className="composer-right">
-                    <span className="composer-cost">≈ 0.01 USDT</span>
+                    <span className="composer-cost">≈ 0.01 USDC</span>
                     <button
                       className="btn btn-primary"
                       onClick={() => handleSend()}

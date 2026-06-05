@@ -20,8 +20,9 @@ const derivativesApi = new IndexerGrpcDerivativesApi(endpoints.indexer)
 const oracleApi = new IndexerGrpcOracleApi(endpoints.indexer)
 const portfolioApi = new IndexerGrpcAccountPortfolioApi(endpoints.indexer)
 
-const USDT_DECIMALS = 6
+const QUOTE_DECIMALS = 6
 const INJ_DECIMALS  = 18
+const USDC_QUOTE_DENOM = 'erc20:0xa00c59ff5a080d2b954d0c75e46e22a0c371235a'
 
 // ─── Token registry ───────────────────────────────────────────────────────────
 // Maps lower-cased Ethereum contract address → { symbol, decimals }
@@ -48,6 +49,11 @@ const PEGGY_REGISTRY: Record<string, { symbol: string; decimals: number }> = {
   '0x93581991f68dbae1ea105233b67f7fa0d6bdee7b': { symbol: 'EVMOS', decimals: 18 },
 }
 
+const ERC20_REGISTRY: Record<string, { symbol: string; decimals: number }> = {
+  '0xa00c59ff5a080d2b954d0c75e46e22a0c371235a': { symbol: 'USDC', decimals: 6 },
+  '0x88f7f2b685f9692caf8c478f5badf09ee9b1cc13': { symbol: 'USDT', decimals: 6 },
+}
+
 /**
  * Resolve a Peggy denom (e.g. "peggy0xdAC17F9...") to symbol + decimals.
  * Returns null for unknown tokens.
@@ -65,10 +71,32 @@ function resolvePeggyToken(denom: string): { symbol: string; decimals: number } 
 function resolveDenom(denom: string): { symbol: string; decimals: number } | null {
   if (denom === 'inj') return { symbol: 'INJ', decimals: INJ_DECIMALS }
   if (denom.startsWith('peggy')) return resolvePeggyToken(denom)
-  // IBC tokens: show as "IBC" — decimals vary too much to guess safely, skip.
+  if (denom.startsWith('erc20:0x') || denom.startsWith('erc20:0X')) {
+    const addr = denom.slice('erc20:'.length).toLowerCase()
+    return ERC20_REGISTRY[addr] ?? null
+  }
+  // IBC tokens: show as "IBC", decimals vary too much to guess safely, skip.
   if (denom.startsWith('ibc/')) return null
-  // Factory / ERC20 tokens: skip unknown ones to avoid garbage values.
+  // Factory / unknown tokens: skip unknown ones to avoid garbage values.
   return null
+}
+
+function isUsdcPerpMarket(market: Record<string, unknown>, ticker: string): boolean {
+  const tickerUpper = ticker.toUpperCase()
+  const quoteSymbol = String((market['quoteToken'] as Record<string, unknown> | undefined)?.symbol ?? '').toUpperCase()
+  const quoteDenom = String(
+    market['quoteDenom'] ??
+    (market['quoteToken'] as Record<string, unknown> | undefined)?.denom ??
+    ''
+  ).toLowerCase()
+  const oracleQuote = String(market['oracleQuote'] ?? '').toUpperCase()
+
+  return (
+    quoteSymbol === 'USDC' ||
+    quoteDenom === USDC_QUOTE_DENOM ||
+    tickerUpper.includes('/USDC') ||
+    oracleQuote === 'USDC'
+  )
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -135,7 +163,9 @@ export async function listMarkets(): Promise<PerpMarket[]> {
     if (!isPerpetual) continue
 
     const ticker = String(any['ticker'] ?? '')
-    // Derive human-readable symbol from ticker "BTC/USDT PERP" → "BTC"
+    if (!isUsdcPerpMarket(any, ticker)) continue
+
+    // Derive human-readable symbol from ticker "BTC/USDC PERP" to "BTC"
     const symbolFromTicker = ticker.split('/')[0] ?? ''
     const oracleBase = String(any['oracleBase'] ?? symbolFromTicker)
 
@@ -149,7 +179,7 @@ export async function listMarkets(): Promise<PerpMarket[]> {
       maintenanceMarginRatio: String(any['maintenanceMarginRatio'] ?? '0.02'),
       takerFeeRate: String(any['takerFeeRate'] ?? '0.001'),
       oracleBase,
-      oracleQuote: String(any['oracleQuote'] ?? 'USDT'),
+      oracleQuote: String(any['oracleQuote'] ?? 'USDC'),
       oracleType: String(any['oracleType'] ?? 'bandibc'),
     })
   }
@@ -180,7 +210,7 @@ export async function getMarketPrice(symbol: string): Promise<string> {
     })
     return new Decimal(priceResult.price).toFixed(4)
   } catch {
-    // fallback: return empty string — UI handles gracefully
+    // fallback: return empty string, UI handles gracefully
     return '?'
   }
 }
@@ -192,7 +222,7 @@ export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
 
   const result: BalanceInfo[] = []
 
-  // Bank balances — Coin type: { denom: string; amount: string }
+  // Bank balances, Coin type: { denom: string; amount: string }
   for (const b of portfolio.bankBalancesList ?? []) {
     const denom  = b.denom ?? ''
     const token  = resolveDenom(denom)
@@ -203,7 +233,7 @@ export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
     }
   }
 
-  // Subaccount balances — PortfolioSubaccountBalanceV2: { subaccountId, denom, deposit? }
+  // Subaccount balances, PortfolioSubaccountBalanceV2: { subaccountId, denom, deposit? }
   for (const s of portfolio.subaccountsList ?? []) {
     const denom = s.denom ?? ''
     const token = resolveDenom(denom)
@@ -233,8 +263,8 @@ export async function getPositions(injAddress: string): Promise<PositionInfo[]> 
     // p.direction is TradeDirection ('long' | 'short')
     const side = p.direction === 'long' ? 'long' : 'short'
 
-    // Indexer returns prices in chain units for derivative markets (scaled by 10^6 for USDT quote)
-    const SCALE = new Decimal(10).pow(USDT_DECIMALS)
+    // Indexer returns prices in chain units for derivative markets (scaled by 10^6 for USDC quote)
+    const SCALE = new Decimal(10).pow(QUOTE_DECIMALS)
     const entryPrice = new Decimal(p.entryPrice).div(SCALE)
     const markPrice = new Decimal(p.markPrice ?? p.entryPrice).div(SCALE)
     const quantity = new Decimal(p.quantity)
@@ -279,7 +309,7 @@ export interface OrderbookInfo {
 
 export async function getOrderbook(symbol: string, levels = 10): Promise<OrderbookInfo> {
   const market = await resolveMarket(symbol)
-  const SCALE  = new Decimal(10).pow(USDT_DECIMALS)
+  const SCALE  = new Decimal(10).pow(QUOTE_DECIMALS)
 
   const book = await derivativesApi.fetchOrderbookV2(market.marketId)
 

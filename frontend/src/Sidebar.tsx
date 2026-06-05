@@ -14,7 +14,7 @@ export function Sidebar({
   modeStatus:    string
 }) {
   const suggestions = [
-    'long 50 USDT INJ',
+    'long 50 USDC INJ',
     'BTC price',
     'INJ RFQ',
     'show open positions',

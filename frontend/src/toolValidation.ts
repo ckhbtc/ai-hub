@@ -116,7 +116,7 @@ export function validateBrowserToolPayload(tool: BrowserToolPayload): BrowserToo
         input: {
           symbol: symbol(input, tool.name),
           side: side(input, tool.name),
-          notional_usdt: positiveNumber(input, 'notional_usdt', tool.name),
+          notional_usdc: positiveNumber(input, 'notional_usdc', tool.name),
           leverage: leverage(input, tool.name),
           slippage: slippage(input, 0.01, tool.name),
         },
@@ -145,7 +145,7 @@ export function validateBrowserToolPayload(tool: BrowserToolPayload): BrowserToo
         ...tool,
         input: {
           amount: amountString(input, 'amount', tool.name),
-          token: token(input, 'token', ['USDT', 'USDC'], 'USDT', tool.name),
+          token: token(input, 'token', ['USDT'], 'USDT', tool.name),
           approveCalldata: hexData(input, 'approveCalldata', tool.name),
           depositCalldata: hexData(input, 'depositCalldata', tool.name),
           nativeTokenAddress: ethAddress(input, 'nativeTokenAddress', tool.name),
@@ -159,7 +159,7 @@ export function validateBrowserToolPayload(tool: BrowserToolPayload): BrowserToo
         ...tool,
         input: {
           amount: amountString(input, 'amount', tool.name),
-          token: token(input, 'token', ['WUSDT', 'WUSDC'], 'WUSDT', tool.name),
+          token: token(input, 'token', ['WUSDT'], 'WUSDT', tool.name),
           withdrawCalldata: hexData(input, 'withdrawCalldata', tool.name),
           wrappedTokenAddress: ethAddress(input, 'wrappedTokenAddress', tool.name),
           amountRaw: rawAmount(input, 'amountRaw', tool.name),

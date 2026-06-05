@@ -36,7 +36,7 @@ function toolMarket(tool: BrowserToolPayload): string {
   if (name === 'trade_open' || name === 'trade_close') {
     return String(input.symbol ?? '').toUpperCase()
   }
-  if (name === 'bridge_execute') return 'USDC → USDT'
+  if (name === 'bridge_execute') return 'USDC → USDC'
   if (name === 'x402_pay')       return String(input.url ?? '')
   if (name.startsWith('x402_'))  return String(input.token ?? '')
   if (name === 'enable_autosign')  return 'enable'
@@ -48,13 +48,13 @@ function toolSize(tool: BrowserToolPayload): { val: string; sub: string } | null
   const { name, input } = tool
   if (name === 'trade_open') {
     return {
-      val: `${input.notional_usdt} USDT`,
+      val: `${input.notional_usdc} USDC`,
       sub: `${input.leverage ?? 1}× ${input.symbol ?? ''}`,
     }
   }
   if (name === 'trade_close') {
     return {
-      val: `${input.quantity} ${String(input.symbol ?? '').replace('/USDT PERP', '')}`,
+      val: `${input.quantity} ${String(input.symbol ?? '').replace('/USDC PERP', '')}`,
       sub: `close ${input.side}`,
     }
   }
@@ -82,7 +82,7 @@ function DestructiveToolCard({
   const size   = toolSize(browserTool)
 
   const rows = Object.entries(browserTool.input)
-    .filter(([k]) => !['symbol', 'side', 'notional_usdt', 'amount', 'quantity', 'token', 'url'].includes(k))
+    .filter(([k]) => !['symbol', 'side', 'notional_usdc', 'amount', 'quantity', 'token', 'url'].includes(k))
 
   return (
     <div className="tool-dest">

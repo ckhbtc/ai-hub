@@ -86,7 +86,7 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'get_bridge_quote',
-    description: 'Get a quote for bridging USDC from Arbitrum to USDT on Injective via deBridge DLN. Shows received amount and fees. Read-only.',
+    description: 'Get a quote for bridging USDC from Arbitrum to native USDC on Injective via Circle CCTP V2. Shows received amount and fees. Read-only.',
     input_schema: {
       type: 'object',
       properties: {
@@ -101,19 +101,19 @@ export const TOOLS: Anthropic.Tool[] = [
     description:
       'Open a perpetual futures position on Injective through RFQ quote-based execution. Requires MetaMask signing in the browser. ' +
       'IMPORTANT: When the user says "long 1 INJ" or "short 0.5 BTC", they mean QUANTITY - ' +
-      'multiply by the current oracle price to get notional_usdt. Use get_market_data first if needed. ' +
-      'When the user says "$100 of INJ" or "100 dollars", that IS the notional_usdt directly. ' +
+      'multiply by the current oracle price to get notional_usdc. Use get_market_data first if needed. ' +
+      'When the user says "$100 of INJ" or "100 dollars", that IS the notional_usdc directly. ' +
       'Always confirm: "Open RFQ [side] [quantity] [symbol] (~$[notional]) at [leverage]x - confirm?"',
     input_schema: {
       type: 'object',
       properties: {
         symbol:       { type: 'string', description: 'Market symbol, e.g. BTC, ETH, INJ' },
         side:         { type: 'string', enum: ['long', 'short'], description: 'Position direction' },
-        notional_usdt:{ type: 'number', description: 'USDT notional amount. If user specifies quantity (e.g. "1 INJ"), multiply quantity × oracle price to get this value.' },
+        notional_usdc:{ type: 'number', description: 'USDC notional amount. If user specifies quantity (e.g. "1 INJ"), multiply quantity × oracle price to get this value.' },
         leverage:     { type: 'number', description: 'Leverage multiplier, e.g. 5 for 5x' },
         slippage:     { type: 'number', description: 'Slippage tolerance as fraction (default 0.01 = 1%)' },
       },
-      required: ['symbol', 'side', 'notional_usdt', 'leverage'],
+      required: ['symbol', 'side', 'notional_usdc', 'leverage'],
     },
   },
   {
@@ -135,8 +135,8 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'bridge_execute',
     description:
-      'Execute a bridge from Arbitrum USDC to Injective USDT via deBridge DLN. ' +
-      'Requires MetaMask to sign on Arbitrum (approve + bridge). Always get a quote first and confirm with user.',
+      'Execute a bridge from Arbitrum USDC to native USDC on Injective via Circle CCTP V2. ' +
+      'Requires MetaMask to sign on Arbitrum and uses the server relayer for the Injective mint. Always get a quote first and confirm with user.',
     input_schema: {
       type: 'object',
       properties: {
@@ -161,14 +161,13 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'x402_check_wrapped_balance',
     description:
-      'Check WUSDT/WUSDC wrapped token balance on Injective EVM for x402 payments. ' +
-      'Also shows the native USDT/USDC balance for comparison. ' +
-      'Wrapped tokens are needed for x402 micropayments (EIP-3009).',
+      'Check native USDC or legacy WUSDT balance on Injective EVM for x402 payments. ' +
+      'Native USDC supports EIP-3009 directly; WUSDT is only needed for legacy USDT-based x402 endpoints.',
     input_schema: {
       type: 'object',
       properties: {
         address: { type: 'string', description: 'Ethereum 0x address (the user\'s connected wallet)' },
-        token:   { type: 'string', enum: ['WUSDT', 'WUSDC'], description: 'Which wrapped token to check (default WUSDT)' },
+        token:   { type: 'string', enum: ['USDC', 'WUSDT'], description: 'Which token to check (default USDC)' },
       },
       required: ['address'],
     },
@@ -181,14 +180,14 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'x402_wrap_tokens',
     description:
-      'Wrap native USDT or USDC into x402-compatible WUSDT/WUSDC on Injective EVM. ' +
+      'Wrap legacy native USDT into x402-compatible WUSDT on Injective EVM. ' +
       'Requires MetaMask (approve + deposit, two confirmations). ' +
-      'Users must wrap tokens before making x402 payments.',
+      'Do not use this for USDC because native USDC already supports x402 payments.',
     input_schema: {
       type: 'object',
       properties: {
         amount: { type: 'string', description: 'Amount to wrap (e.g. "10")' },
-        token:  { type: 'string', enum: ['USDT', 'USDC'], description: 'Which native token to wrap (default USDT)' },
+        token:  { type: 'string', enum: ['USDT'], description: 'Legacy native token to wrap (default USDT)' },
       },
       required: ['amount'],
     },
@@ -196,12 +195,12 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'x402_unwrap_tokens',
     description:
-      'Unwrap WUSDT/WUSDC back to native USDT/USDC on Injective EVM. Requires MetaMask signing.',
+      'Unwrap legacy WUSDT back to native USDT on Injective EVM. Requires MetaMask signing.',
     input_schema: {
       type: 'object',
       properties: {
         amount: { type: 'string', description: 'Amount to unwrap (e.g. "10")' },
-        token:  { type: 'string', enum: ['WUSDT', 'WUSDC'], description: 'Which wrapped token to unwrap (default WUSDT)' },
+        token:  { type: 'string', enum: ['WUSDT'], description: 'Which wrapped token to unwrap (default WUSDT)' },
       },
       required: ['amount'],
     },
@@ -211,7 +210,7 @@ export const TOOLS: Anthropic.Tool[] = [
     description:
       'Make a payment to an x402-protected API endpoint on Injective EVM. ' +
       'Signs an EIP-3009 authorization via MetaMask and sends it as a PAYMENT header. ' +
-      'The user must have sufficient WUSDT or WUSDC balance.',
+      'The user should use native USDC when the endpoint accepts it; WUSDT is only for legacy USDT endpoints.',
     input_schema: {
       type: 'object',
       properties: {
@@ -281,7 +280,7 @@ export async function executeServerTool(
       return inj.getBridgeQuote(input.amount as string)
 
     case 'x402_check_wrapped_balance':
-      return x402.getWrappedBalance(input.address as string, (input.token as string) ?? 'WUSDT')
+      return x402.getWrappedBalance(input.address as string, (input.token as string) ?? 'USDC')
 
     case 'x402_list_tokens':
       return x402.listX402Tokens()
