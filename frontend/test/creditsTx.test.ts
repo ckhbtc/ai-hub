@@ -4,7 +4,9 @@ import {
   buildBalanceOfData,
   buildErc20TransferData,
   decimalAmountToRaw,
+  formatInjAmount,
   formatTokenAmount,
+  needsInjGasTopUp,
 } from '../src/creditsTx.ts'
 
 test('formats max balances by truncating instead of rounding up', () => {
@@ -18,6 +20,12 @@ test('parses six-decimal token amounts into exact raw units', () => {
 
 test('rejects token amounts with unsupported precision', () => {
   assert.throws(() => decimalAmountToRaw('1.0000001'), /up to 6 decimal/)
+})
+
+test('detects wallets that need an INJ gas top-up', () => {
+  assert.equal(needsInjGasTopUp(999_999_999_999_999n), true)
+  assert.equal(needsInjGasTopUp(1_000_000_000_000_000n), false)
+  assert.equal(formatInjAmount(123_456_789_123_456_789n), '0.123456')
 })
 
 test('builds ERC-20 calldata with exact raw amount', () => {

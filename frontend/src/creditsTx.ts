@@ -1,4 +1,6 @@
 export const ERC20_DECIMALS = 6
+export const INJ_DECIMALS = 18
+export const INJ_GAS_FLOOR_RAW = 1_000_000_000_000_000n
 export const TRANSFER_SIG = '0xa9059cbb'
 export const BALANCE_OF_SIG = '0x70a08231'
 
@@ -40,6 +42,14 @@ export function formatTokenAmount(raw: bigint, decimals = ERC20_DECIMALS, maxFra
     .replace(/0+$/, '')
 
   return fractionText ? `${whole}.${fractionText}` : whole.toString()
+}
+
+export function formatInjAmount(raw: bigint, maxFractionDigits = 6): string {
+  return formatTokenAmount(raw, INJ_DECIMALS, maxFractionDigits)
+}
+
+export function needsInjGasTopUp(rawBalance: bigint, floorRaw = INJ_GAS_FLOOR_RAW): boolean {
+  return rawBalance < floorRaw
 }
 
 export function decimalAmountToRaw(amountText: string, decimals = ERC20_DECIMALS): bigint {

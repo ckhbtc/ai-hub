@@ -94,6 +94,22 @@ export async function submitDeposit(txHash: string): Promise<{
   return res.json()
 }
 
+export async function requestGasTopUp(evmAddress: string): Promise<{
+  txHash: string
+  status: string
+}> {
+  const res = await fetch(`${BASE}/api/faucet`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ evmAddress }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error((err as { error?: string }).error ?? res.statusText)
+  }
+  return res.json()
+}
+
 // ─── Chat API ────────────────────────────────────────────────────────────────
 
 export async function sendChat(

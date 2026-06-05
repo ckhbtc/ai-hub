@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { executeBridge } from './bridge'
-import { getCredits, submitDeposit } from './api'
+import { getCredits, requestGasTopUp, submitDeposit } from './api'
 import type { WalletInfo } from './wallet'
 import {
   buildBalanceOfData,
   buildErc20TransferData,
   decimalAmountToRaw,
+  formatInjAmount,
   formatTokenAmount,
   friendlyWalletError,
+  needsInjGasTopUp,
   parseRpcQuantity,
 } from './creditsTx'
 
@@ -36,6 +38,10 @@ async function switchBackToChain(chainId: string): Promise<void> {
   } catch {
     // ignore
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
@@ -69,6 +75,14 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
       display: formatTokenAmount(rawBalance, 6, 4),
       exact: formatTokenAmount(rawBalance, 6, 6),
     }
+  }, [wallet.ethAddress])
+
+  const readInjGasBalance = useCallback(async (): Promise<bigint> => {
+    const raw = await window.ethereum!.request({
+      method: 'eth_getBalance',
+      params: [wallet.ethAddress, 'latest'],
+    }) as string
+    return parseRpcQuantity(raw)
   }, [wallet.ethAddress])
 
   const fetchCredits = useCallback(async () => {
@@ -138,6 +152,31 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
     }
   }
 
+  async function ensureInjGas() {
+    setStatus('Checking INJ gas...')
+    const current = await readInjGasBalance()
+    if (!needsInjGasTopUp(current)) return
+
+    setStatus('Adding INJ for gas...')
+    try {
+      await requestGasTopUp(wallet.ethAddress)
+    } catch (e) {
+      const message = friendlyWalletError(e)
+      if (!/rate limited|wait before retrying/i.test(message)) throw new Error(message)
+      setStatus('Waiting for gas top-up...')
+    }
+
+    const deadline = Date.now() + 25_000
+    let latest = current
+    while (Date.now() < deadline) {
+      await sleep(2500)
+      latest = await readInjGasBalance()
+      if (!needsInjGasTopUp(latest)) return
+    }
+
+    throw new Error(`Gas top-up is still pending. Wallet has ${formatInjAmount(latest)} INJ. Wait a few seconds and try again.`)
+  }
+
   async function sendCreditDeposit(amountText: string, tokenAddress: string, tokenLabel: 'USDC' | 'USDT') {
     setBusy(true); setErr(null)
     let originalChainId: string | null = null
@@ -148,6 +187,7 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
 
       setStatus('Switching to Injective EVM...')
       await switchToInjectiveEvm()
+      await ensureInjGas()
 
       setStatus(`Checking ${tokenLabel} balance...`)
       const balance = await readTokenBalance(tokenAddress)
