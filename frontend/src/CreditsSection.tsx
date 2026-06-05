@@ -2,12 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import { executeBridge } from './bridge'
 import { getCredits, submitDeposit } from './api'
 import type { WalletInfo } from './wallet'
+import {
+  buildBalanceOfData,
+  buildErc20TransferData,
+  decimalAmountToRaw,
+  formatTokenAmount,
+  friendlyWalletError,
+  parseRpcQuantity,
+} from './creditsTx'
 
 const NATIVE_USDC_ADDRESS = '0xa00C59fF5a080D2b954d0c75e46E22a0c371235a'
 const LEGACY_USDT_ADDRESS = '0x88f7F2b685F9692caf8c478f5BADF09eE9B1Cc13'
 const INJECTIVE_EVM_HEX = '0x6f0'
-const TRANSFER_SIG = '0xa9059cbb'
-const BALANCE_OF_SIG = '0x70a08231'
 
 async function waitForTxReceipt(txHash: string, maxMs = 90_000) {
   const deadline = Date.now() + maxMs
@@ -41,6 +47,7 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
   const [legacyDepositTokenAddress, setLegacyDepositTokenAddress] = useState(LEGACY_USDT_ADDRESS)
   const [walletUsdc, setWalletUsdc] = useState<string | null>(null)
   const [walletLegacyUsdt, setWalletLegacyUsdt] = useState<string | null>(null)
+  const [walletLegacyUsdtRaw, setWalletLegacyUsdtRaw] = useState<bigint | null>(null)
   const [depositAmount, setDepositAmount] = useState('1')
   const [migrateAmount, setMigrateAmount] = useState('1')
   const [bridgeAmount, setBridgeAmount] = useState('10')
@@ -51,14 +58,17 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
   const [status, setStatus] = useState('')
   const [err, setErr] = useState<string | null>(null)
 
-  const readTokenBalance = useCallback(async (tokenAddress: string): Promise<string> => {
-    const addr = wallet.ethAddress.slice(2).toLowerCase().padStart(64, '0')
+  const readTokenBalance = useCallback(async (tokenAddress: string): Promise<{ raw: bigint; display: string; exact: string }> => {
     const raw = await window.ethereum!.request({
       method: 'eth_call',
-      params: [{ to: tokenAddress, data: `${BALANCE_OF_SIG}${addr}` }, 'latest'],
+      params: [{ to: tokenAddress, data: buildBalanceOfData(wallet.ethAddress) }, 'latest'],
     }) as string
-    const bal = parseInt(raw, 16) / 1e6
-    return parseFloat(bal.toFixed(4)).toString()
+    const rawBalance = parseRpcQuantity(raw)
+    return {
+      raw: rawBalance,
+      display: formatTokenAmount(rawBalance, 6, 4),
+      exact: formatTokenAmount(rawBalance, 6, 6),
+    }
   }, [wallet.ethAddress])
 
   const fetchCredits = useCallback(async () => {
@@ -85,8 +95,9 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
           readTokenBalance(nextDepositToken),
           readTokenBalance(nextLegacyToken),
         ])
-        setWalletUsdc(usdc)
-        setWalletLegacyUsdt(legacyUsdt)
+        setWalletUsdc(usdc.display)
+        setWalletLegacyUsdt(legacyUsdt.display)
+        setWalletLegacyUsdtRaw(legacyUsdt.raw)
       } catch {
         // not on Injective EVM
       }
@@ -104,7 +115,7 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
   const isLow = balance > 0 && messages <= 10
   const TICKS = 24
   const filled = Math.min(TICKS, Math.floor((balance / 10) * TICKS))
-  const hasLegacyUsdt = Number(walletLegacyUsdt ?? '0') > 0.000001
+  const hasLegacyUsdt = (walletLegacyUsdtRaw ?? 0n) > 0n
 
   async function switchToInjectiveEvm() {
     try {
@@ -132,19 +143,38 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
     let originalChainId: string | null = null
     try {
       originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
-      const amount = parseFloat(amountText)
-      if (!amount || amount <= 0) throw new Error('Invalid amount')
       if (!facilitator) throw new Error('Facilitator not configured')
-      const rawHex = BigInt(Math.round(amount * 1e6)).toString(16).padStart(64, '0')
-      const toPadded = facilitator.slice(2).toLowerCase().padStart(64, '0')
+      const amountRaw = decimalAmountToRaw(amountText)
 
       setStatus('Switching to Injective EVM...')
       await switchToInjectiveEvm()
 
+      setStatus(`Checking ${tokenLabel} balance...`)
+      const balance = await readTokenBalance(tokenAddress)
+      if (balance.raw < amountRaw) {
+        throw new Error(
+          `Insufficient ${tokenLabel}. Wallet has ${balance.exact} ${tokenLabel}, trying to send ${formatTokenAmount(amountRaw, 6, 6)} ${tokenLabel}.`,
+        )
+      }
+
+      const tx = {
+        from: wallet.ethAddress,
+        to: tokenAddress,
+        data: buildErc20TransferData(facilitator, amountRaw),
+        value: '0x0',
+      }
+
+      setStatus('Checking gas...')
+      try {
+        await window.ethereum!.request({ method: 'eth_estimateGas', params: [tx] })
+      } catch (e) {
+        throw new Error(friendlyWalletError(e))
+      }
+
       setStatus(`Send ${tokenLabel} deposit (confirm in wallet)...`)
       const txHash = await window.ethereum!.request({
         method: 'eth_sendTransaction',
-        params: [{ from: wallet.ethAddress, to: tokenAddress, data: `${TRANSFER_SIG}${toPadded}${rawHex}` }],
+        params: [tx],
       }) as string
 
       setStatus(`Tx ${txHash.slice(0, 10)}... waiting for confirmation`)
@@ -159,7 +189,7 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
       await fetchCredits()
       setTimeout(() => setStatus(''), 5000)
     } catch (e) {
-      setErr((e as Error).message)
+      setErr(friendlyWalletError(e))
       setStatus('')
     } finally {
       if (originalChainId) await switchBackToChain(originalChainId)
@@ -235,7 +265,7 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
               setShowMigrate(s => !s)
               setShowDeposit(false)
               setShowBridge(false)
-              setMigrateAmount(walletLegacyUsdt ?? '1')
+              setMigrateAmount(walletLegacyUsdtRaw != null ? formatTokenAmount(walletLegacyUsdtRaw, 6, 6) : (walletLegacyUsdt ?? '1'))
             }}
             disabled={busy}
           >Migrate</button>
@@ -283,8 +313,8 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
             className="amount-input"
             value={migrateAmount}
             onChange={e => setMigrateAmount(e.target.value)}
-            min="0.1"
-            step="0.5"
+            min="0.000001"
+            step="0.000001"
             disabled={busy}
             placeholder="USDT"
           />
