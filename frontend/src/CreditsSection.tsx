@@ -3,9 +3,11 @@ import { executeBridge } from './bridge'
 import { getCredits, submitDeposit } from './api'
 import type { WalletInfo } from './wallet'
 
-const NATIVE_USDT_ADDRESS = '0x88f7F2b685F9692caf8c478f5BADF09eE9B1Cc13'
+const NATIVE_USDC_ADDRESS = '0xa00C59fF5a080D2b954d0c75e46E22a0c371235a'
+const LEGACY_USDT_ADDRESS = '0x88f7F2b685F9692caf8c478f5BADF09eE9B1Cc13'
 const INJECTIVE_EVM_HEX = '0x6f0'
 const TRANSFER_SIG = '0xa9059cbb'
+const BALANCE_OF_SIG = '0x70a08231'
 
 async function waitForTxReceipt(txHash: string, maxMs = 90_000) {
   const deadline = Date.now() + maxMs
@@ -34,34 +36,62 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
   const [credits, setCredits] = useState<number | null>(null)
   const [facilitator, setFacilitator] = useState('')
   const [costPerMsg, setCostPerMsg] = useState(0.01)
-  const [walletUsdt, setWalletUsdt] = useState<string | null>(null)
+  const [assetSymbol, setAssetSymbol] = useState('USDC')
+  const [depositTokenAddress, setDepositTokenAddress] = useState(NATIVE_USDC_ADDRESS)
+  const [legacyDepositTokenAddress, setLegacyDepositTokenAddress] = useState(LEGACY_USDT_ADDRESS)
+  const [walletUsdc, setWalletUsdc] = useState<string | null>(null)
+  const [walletLegacyUsdt, setWalletLegacyUsdt] = useState<string | null>(null)
   const [depositAmount, setDepositAmount] = useState('1')
+  const [migrateAmount, setMigrateAmount] = useState('1')
   const [bridgeAmount, setBridgeAmount] = useState('10')
   const [showDeposit, setShowDeposit] = useState(false)
   const [showBridge, setShowBridge] = useState(false)
+  const [showMigrate, setShowMigrate] = useState(false)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [err, setErr] = useState<string | null>(null)
 
+  const readTokenBalance = useCallback(async (tokenAddress: string): Promise<string> => {
+    const addr = wallet.ethAddress.slice(2).toLowerCase().padStart(64, '0')
+    const raw = await window.ethereum!.request({
+      method: 'eth_call',
+      params: [{ to: tokenAddress, data: `${BALANCE_OF_SIG}${addr}` }, 'latest'],
+    }) as string
+    const bal = parseInt(raw, 16) / 1e6
+    return parseFloat(bal.toFixed(4)).toString()
+  }, [wallet.ethAddress])
+
   const fetchCredits = useCallback(async () => {
+    let nextDepositToken = depositTokenAddress
+    let nextLegacyToken = legacyDepositTokenAddress
+
     try {
       const data = await getCredits(wallet.ethAddress)
       setCredits(data.balance)
       setFacilitator(data.facilitator)
       setCostPerMsg(data.costPerMessage)
-    } catch { /* ignore */ }
+      setAssetSymbol(data.assetSymbol || 'USDC')
+      nextDepositToken = data.depositTokenAddress || NATIVE_USDC_ADDRESS
+      nextLegacyToken = data.legacyDepositTokenAddress || LEGACY_USDT_ADDRESS
+      setDepositTokenAddress(nextDepositToken)
+      setLegacyDepositTokenAddress(nextLegacyToken)
+    } catch {
+      // ignore
+    }
+
     if (window.ethereum) {
       try {
-        const addr = wallet.ethAddress.slice(2).toLowerCase().padStart(64, '0')
-        const raw = await window.ethereum.request({
-          method: 'eth_call',
-          params: [{ to: NATIVE_USDT_ADDRESS, data: `0x70a08231${addr}` }, 'latest'],
-        }) as string
-        const bal = parseInt(raw, 16) / 1e6
-        setWalletUsdt(parseFloat(bal.toFixed(4)).toString())
-      } catch { /* not on injective evm */ }
+        const [usdc, legacyUsdt] = await Promise.all([
+          readTokenBalance(nextDepositToken),
+          readTokenBalance(nextLegacyToken),
+        ])
+        setWalletUsdc(usdc)
+        setWalletLegacyUsdt(legacyUsdt)
+      } catch {
+        // not on Injective EVM
+      }
     }
-  }, [wallet.ethAddress])
+  }, [depositTokenAddress, legacyDepositTokenAddress, readTokenBalance, wallet.ethAddress])
 
   useEffect(() => {
     fetchCredits()
@@ -69,11 +99,12 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
     return () => clearInterval(t)
   }, [fetchCredits])
 
-  const balance     = credits ?? 0
-  const messages    = Math.floor(balance / costPerMsg)
-  const isLow       = balance > 0 && messages <= 10
-  const TICKS       = 24
-  const filled      = Math.min(TICKS, Math.floor((balance / 10) * TICKS))
+  const balance = credits ?? 0
+  const messages = Math.floor(balance / costPerMsg)
+  const isLow = balance > 0 && messages <= 10
+  const TICKS = 24
+  const filled = Math.min(TICKS, Math.floor((balance / 10) * TICKS))
+  const hasLegacyUsdt = Number(walletLegacyUsdt ?? '0') > 0.000001
 
   async function switchToInjectiveEvm() {
     try {
@@ -96,34 +127,36 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
     }
   }
 
-  async function handleDeposit() {
+  async function sendCreditDeposit(amountText: string, tokenAddress: string, tokenLabel: 'USDC' | 'USDT') {
     setBusy(true); setErr(null)
     let originalChainId: string | null = null
     try {
       originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
-      const amount = parseFloat(depositAmount)
+      const amount = parseFloat(amountText)
       if (!amount || amount <= 0) throw new Error('Invalid amount')
       if (!facilitator) throw new Error('Facilitator not configured')
-      const rawHex   = BigInt(Math.round(amount * 1e6)).toString(16).padStart(64, '0')
+      const rawHex = BigInt(Math.round(amount * 1e6)).toString(16).padStart(64, '0')
       const toPadded = facilitator.slice(2).toLowerCase().padStart(64, '0')
 
-      setStatus('Switching to Injective EVM…')
+      setStatus('Switching to Injective EVM...')
       await switchToInjectiveEvm()
 
-      setStatus('Send USDT deposit (confirm in wallet)…')
+      setStatus(`Send ${tokenLabel} deposit (confirm in wallet)...`)
       const txHash = await window.ethereum!.request({
         method: 'eth_sendTransaction',
-        params: [{ from: wallet.ethAddress, to: NATIVE_USDT_ADDRESS, data: `${TRANSFER_SIG}${toPadded}${rawHex}` }],
+        params: [{ from: wallet.ethAddress, to: tokenAddress, data: `${TRANSFER_SIG}${toPadded}${rawHex}` }],
       }) as string
 
-      setStatus(`Tx ${txHash.slice(0, 10)}… waiting for confirmation`)
+      setStatus(`Tx ${txHash.slice(0, 10)}... waiting for confirmation`)
       await waitForTxReceipt(txHash)
 
-      setStatus('Verifying deposit…')
+      setStatus('Verifying deposit...')
       const result = await submitDeposit(txHash)
       setCredits(result.newBalance)
-      setStatus(`Credited $${result.credited.toFixed(2)}`)
+      setStatus(`Credited ${result.credited.toFixed(2)} USDC`)
       setShowDeposit(false)
+      setShowMigrate(false)
+      await fetchCredits()
       setTimeout(() => setStatus(''), 5000)
     } catch (e) {
       setErr((e as Error).message)
@@ -134,14 +167,23 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
     }
   }
 
+  async function handleDeposit() {
+    await sendCreditDeposit(depositAmount, depositTokenAddress, 'USDC')
+  }
+
+  async function handleMigrate() {
+    await sendCreditDeposit(migrateAmount, legacyDepositTokenAddress, 'USDT')
+  }
+
   async function handleBridge() {
     setBusy(true); setErr(null)
     try {
       const amount = parseFloat(bridgeAmount)
       if (!amount || amount <= 0) throw new Error('Invalid amount')
       await executeBridge(bridgeAmount, wallet.ethAddress, wallet.ethAddress, setStatus)
-      setStatus('Bridge submitted — USDT arrives in ~1 min')
+      setStatus('Bridge complete, native USDC arrived')
       setShowBridge(false)
+      await fetchCredits()
       setTimeout(() => setStatus(''), 10000)
     } catch (e) {
       setErr((e as Error).message)
@@ -157,12 +199,12 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
 
       <div className="credits-headline">
         <span className={`credits-num ${isLow ? 'low' : ''}`}>
-          {credits != null ? balance.toFixed(2) : '—'}
+          {credits != null ? balance.toFixed(2) : '-'}
         </span>
-        <span className="credits-unit">USDT</span>
+        <span className="credits-unit">{assetSymbol}</span>
       </div>
       <div className="credits-sub">
-        ≈ {credits != null ? messages : '—'} messages · {costPerMsg.toFixed(2)} each
+        approx {credits != null ? messages : '-'} messages · {costPerMsg.toFixed(2)} each
       </div>
 
       <div className="tick-scale">
@@ -178,14 +220,26 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
       <div className="btn-row">
         <button
           className="btn btn-primary"
-          onClick={() => { setShowDeposit(s => !s); setShowBridge(false) }}
+          onClick={() => { setShowDeposit(s => !s); setShowBridge(false); setShowMigrate(false) }}
           disabled={busy}
         >Deposit</button>
         <button
           className="btn btn-ghost"
-          onClick={() => { setShowBridge(s => !s); setShowDeposit(false) }}
+          onClick={() => { setShowBridge(s => !s); setShowDeposit(false); setShowMigrate(false) }}
           disabled={busy}
         >Bridge</button>
+        {hasLegacyUsdt && (
+          <button
+            className="btn btn-ghost"
+            onClick={() => {
+              setShowMigrate(s => !s)
+              setShowDeposit(false)
+              setShowBridge(false)
+              setMigrateAmount(walletLegacyUsdt ?? '1')
+            }}
+            disabled={busy}
+          >Migrate</button>
+        )}
       </div>
 
       {showDeposit && (
@@ -198,10 +252,10 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
             min="0.1"
             step="0.5"
             disabled={busy}
-            placeholder="USDT"
+            placeholder="USDC"
           />
           <button className="btn btn-primary" onClick={handleDeposit} disabled={busy}>
-            {busy ? '…' : 'Send'}
+            {busy ? '...' : 'Send'}
           </button>
         </div>
       )}
@@ -218,15 +272,38 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
             placeholder="USDC"
           />
           <button className="btn btn-primary" onClick={handleBridge} disabled={busy}>
-            {busy ? '…' : 'Send'}
+            {busy ? '...' : 'Send'}
+          </button>
+        </div>
+      )}
+      {showMigrate && (
+        <div className="amount-row">
+          <input
+            type="number"
+            className="amount-input"
+            value={migrateAmount}
+            onChange={e => setMigrateAmount(e.target.value)}
+            min="0.1"
+            step="0.5"
+            disabled={busy}
+            placeholder="USDT"
+          />
+          <button className="btn btn-primary" onClick={handleMigrate} disabled={busy}>
+            {busy ? '...' : 'Send'}
           </button>
         </div>
       )}
 
-      {walletUsdt != null && !showDeposit && !showBridge && (
+      {walletUsdc != null && !showDeposit && !showBridge && !showMigrate && (
         <div className="kv-row" style={{ marginTop: 10 }}>
           <span className="kv-key">wallet</span>
-          <span className="kv-val">{walletUsdt} <span className="unit">USDT</span></span>
+          <span className="kv-val">{walletUsdc} <span className="unit">USDC</span></span>
+        </div>
+      )}
+      {hasLegacyUsdt && !showDeposit && !showBridge && !showMigrate && (
+        <div className="kv-row" style={{ marginTop: 6 }}>
+          <span className="kv-key">legacy</span>
+          <span className="kv-val">{walletLegacyUsdt} <span className="unit">USDT</span></span>
         </div>
       )}
 

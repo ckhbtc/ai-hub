@@ -1,9 +1,10 @@
 /**
  * Credit system for pay-per-message chat.
  *
- * Users deposit USDT to the facilitator address via simple ERC-20 transfer.
+ * Users deposit native USDC to the facilitator address via simple ERC-20 transfer.
  * After deposit, they submit the txHash to /api/deposit which verifies on-chain
  * and credits their account. Each chat message deducts from the balance.
+ * Legacy USDT deposits are still accepted as migration deposits.
  *
  * Credits stored in a JSON file to survive restarts.
  */
@@ -15,14 +16,19 @@ import { createPublicClient, http, defineChain } from 'viem'
 const CREDITS_FILE = process.env.CREDITS_FILE
   ? path.resolve(process.env.CREDITS_FILE)
   : path.resolve(process.cwd(), 'credits.json')
-const COST_PER_MESSAGE = 0.01 // USDT
+const COST_PER_MESSAGE = 0.01 // USDC
 const COST_PER_MESSAGE_MICRO = 10_000n
-const USDT_DECIMALS = 6
-const MICRO_USDT = 10n ** BigInt(USDT_DECIMALS)
+const CREDIT_DECIMALS = 6
+const MICRO_USD = 10n ** BigInt(CREDIT_DECIMALS)
 const PENDING_TX_TTL_MS = 10 * 60 * 1000
 
-const NATIVE_USDT = '0x88f7F2b685F9692caf8c478f5BADF09eE9B1Cc13' as const
+const NATIVE_USDC = '0xa00C59fF5a080D2b954d0c75e46E22a0c371235a' as const
+const LEGACY_USDT = '0x88f7F2b685F9692caf8c478f5BADF09eE9B1Cc13' as const
 const INJ_EVM_RPC = 'https://sentry.evm-rpc.injective.network'
+const DEPOSIT_TOKENS = [
+  { symbol: 'USDC', address: NATIVE_USDC, legacy: false },
+  { symbol: 'USDT', address: LEGACY_USDT, legacy: true },
+] as const
 
 const injectiveEvm = defineChain({
   id: 1776,
@@ -42,18 +48,34 @@ function getClient() {
 // ─── Credit store ────────────────────────────────────────────────────────────
 
 interface CreditStore {
-  schemaVersion: 2
-  // wallet address (lowercase) → credit balance in micro-USDT
-  balancesMicroUsdt: Record<string, string>
+  schemaVersion: 3
+  // wallet address (lowercase) → credit balance in micro-USD credits
+  balancesMicroUsd: Record<string, string>
   // txHash → transaction details (prevent double-crediting)
-  processedTxs: Record<string, { from: string; amountMicroUsdt: string; creditedAt: string }>
+  processedTxs: Record<string, {
+    from: string
+    amountMicroUsd: string
+    tokenSymbol: 'USDC' | 'USDT' | 'UNKNOWN'
+    tokenAddress: string
+    creditedAt: string
+  }>
   // txHash → unix ms timestamp while a verification is in progress
   pendingTxs: Record<string, number>
 }
 
 interface LegacyCreditStore {
+  schemaVersion?: number
   balances?: Record<string, number>
-  processedTxs?: Record<string, boolean>
+  balancesMicroUsdt?: Record<string, string>
+  processedTxs?: Record<string, boolean | {
+    from?: string
+    amountMicroUsdt?: string
+    amountMicroUsd?: string
+    tokenSymbol?: 'USDC' | 'USDT' | 'UNKNOWN'
+    tokenAddress?: string
+    creditedAt?: string
+  }>
+  pendingTxs?: Record<string, number>
 }
 
 let _store: CreditStore | null = null
@@ -65,38 +87,53 @@ export function __resetCreditStoreForTests() {
 }
 
 function emptyStore(): CreditStore {
-  return { schemaVersion: 2, balancesMicroUsdt: {}, processedTxs: {}, pendingTxs: {} }
+  return { schemaVersion: 3, balancesMicroUsd: {}, processedTxs: {}, pendingTxs: {} }
 }
 
-function toMicroUsdt(amount: number): bigint {
-  return BigInt(Math.round(amount * Number(MICRO_USDT)))
+function toMicroUsd(amount: number): bigint {
+  return BigInt(Math.round(amount * Number(MICRO_USD)))
 }
 
-function fromMicroUsdt(amount: bigint): number {
-  return Number(amount) / Number(MICRO_USDT)
+function fromMicroUsd(amount: bigint): number {
+  return Number(amount) / Number(MICRO_USD)
 }
 
 function normalizeStore(raw: unknown): CreditStore {
   const maybe = raw as Partial<CreditStore> & LegacyCreditStore
-  if (maybe?.schemaVersion === 2 && maybe.balancesMicroUsdt && maybe.processedTxs) {
+  if (maybe?.schemaVersion === 3 && maybe.balancesMicroUsd && maybe.processedTxs) {
     return {
-      schemaVersion: 2,
-      balancesMicroUsdt: maybe.balancesMicroUsdt,
-      processedTxs: maybe.processedTxs,
+      schemaVersion: 3,
+      balancesMicroUsd: maybe.balancesMicroUsd,
+      processedTxs: maybe.processedTxs as CreditStore['processedTxs'],
       pendingTxs: maybe.pendingTxs ?? {},
     }
   }
 
   const migrated = emptyStore()
-  for (const [wallet, balance] of Object.entries(maybe?.balances ?? {})) {
-    migrated.balancesMicroUsdt[wallet.toLowerCase()] = toMicroUsdt(balance).toString()
+
+  for (const [wallet, balance] of Object.entries(maybe?.balancesMicroUsdt ?? {})) {
+    migrated.balancesMicroUsd[wallet.toLowerCase()] = balance
   }
+  for (const [wallet, balance] of Object.entries(maybe?.balances ?? {})) {
+    migrated.balancesMicroUsd[wallet.toLowerCase()] = toMicroUsd(balance).toString()
+  }
+
   for (const [txHash, processed] of Object.entries(maybe?.processedTxs ?? {})) {
-    if (processed) {
+    if (processed === true) {
       migrated.processedTxs[txHash.toLowerCase()] = {
         from: '',
-        amountMicroUsdt: '0',
+        amountMicroUsd: '0',
+        tokenSymbol: 'UNKNOWN',
+        tokenAddress: '',
         creditedAt: new Date(0).toISOString(),
+      }
+    } else if (processed) {
+      migrated.processedTxs[txHash.toLowerCase()] = {
+        from: processed.from ?? '',
+        amountMicroUsd: processed.amountMicroUsd ?? processed.amountMicroUsdt ?? '0',
+        tokenSymbol: processed.tokenSymbol ?? 'USDT',
+        tokenAddress: processed.tokenAddress ?? LEGACY_USDT,
+        creditedAt: processed.creditedAt ?? new Date(0).toISOString(),
       }
     }
   }
@@ -137,14 +174,14 @@ function prunePending(store: CreditStore, now = Date.now()) {
 }
 
 function getBalanceMicro(store: CreditStore, wallet: string): bigint {
-  return BigInt(store.balancesMicroUsdt[wallet.toLowerCase()] ?? '0')
+  return BigInt(store.balancesMicroUsd[wallet.toLowerCase()] ?? '0')
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export function getBalance(wallet: string): number {
   const store = loadStore()
-  return fromMicroUsdt(getBalanceMicro(store, wallet))
+  return fromMicroUsd(getBalanceMicro(store, wallet))
 }
 
 export async function deduct(wallet: string): Promise<boolean> {
@@ -152,7 +189,7 @@ export async function deduct(wallet: string): Promise<boolean> {
     const key = wallet.toLowerCase()
     const bal = getBalanceMicro(store, key)
     if (bal < COST_PER_MESSAGE_MICRO) return false
-    store.balancesMicroUsdt[key] = (bal - COST_PER_MESSAGE_MICRO).toString()
+    store.balancesMicroUsd[key] = (bal - COST_PER_MESSAGE_MICRO).toString()
     saveStore()
     return true
   })
@@ -163,14 +200,26 @@ export async function refund(wallet: string): Promise<number> {
     const key = wallet.toLowerCase()
     const bal = getBalanceMicro(store, key)
     const next = bal + COST_PER_MESSAGE_MICRO
-    store.balancesMicroUsdt[key] = next.toString()
+    store.balancesMicroUsd[key] = next.toString()
     saveStore()
-    return fromMicroUsdt(next)
+    return fromMicroUsd(next)
   })
 }
 
 export function getCostPerMessage(): number {
   return COST_PER_MESSAGE
+}
+
+export function getCreditAssetSymbol(): string {
+  return 'USDC'
+}
+
+export function getDepositTokenAddress(): string {
+  return NATIVE_USDC
+}
+
+export function getLegacyDepositTokenAddress(): string {
+  return LEGACY_USDT
 }
 
 export function getFacilitatorAddress(): string {
@@ -183,12 +232,14 @@ export function getFacilitatorAddress(): string {
 
 /**
  * Verify a deposit tx on-chain and credit the sender's account.
- * Accepts USDT transfers to the facilitator address.
+ * Accepts native USDC transfers to the facilitator address.
+ * Legacy USDT transfers are also accepted for migration.
  */
 export async function processDeposit(txHash: string): Promise<{
   credited: number
   newBalance: number
   from: string
+  token: 'USDC' | 'USDT'
 }> {
   const hashKey = txHash.toLowerCase()
 
@@ -221,21 +272,26 @@ export async function processDeposit(txHash: string): Promise<{
 
     let from = ''
     let amount = 0n
+    let token: (typeof DEPOSIT_TOKENS)[number] | null = null
 
     for (const log of receipt.logs) {
-      if (
-        log.address.toLowerCase() === NATIVE_USDT.toLowerCase() &&
-        log.topics[0] === transferTopic &&
-        log.topics[2] && ('0x' + log.topics[2].slice(26)).toLowerCase() === facilitator
-      ) {
-        from = '0x' + log.topics[1]!.slice(26)
-        amount = BigInt(log.data)
-        break
+      for (const candidate of DEPOSIT_TOKENS) {
+        if (
+          log.address.toLowerCase() === candidate.address.toLowerCase() &&
+          log.topics[0] === transferTopic &&
+          log.topics[2] && ('0x' + log.topics[2].slice(26)).toLowerCase() === facilitator
+        ) {
+          from = '0x' + log.topics[1]!.slice(26)
+          amount = BigInt(log.data)
+          token = candidate
+          break
+        }
       }
+      if (token) break
     }
 
-    if (!from || amount === 0n) {
-      throw new Error('No USDT transfer to facilitator found in this transaction')
+    if (!from || amount === 0n || !token) {
+      throw new Error('No USDC or legacy USDT transfer to facilitator found in this transaction')
     }
 
     const key = from.toLowerCase()
@@ -245,10 +301,12 @@ export async function processDeposit(txHash: string): Promise<{
       }
       const current = getBalanceMicro(store, key)
       const next = current + amount
-      store.balancesMicroUsdt[key] = next.toString()
+      store.balancesMicroUsd[key] = next.toString()
       store.processedTxs[hashKey] = {
         from: key,
-        amountMicroUsdt: amount.toString(),
+        amountMicroUsd: amount.toString(),
+        tokenSymbol: token.symbol,
+        tokenAddress: token.address,
         creditedAt: new Date().toISOString(),
       }
       delete store.pendingTxs[hashKey]
@@ -256,7 +314,12 @@ export async function processDeposit(txHash: string): Promise<{
       return next
     })
 
-    return { credited: fromMicroUsdt(amount), newBalance: fromMicroUsdt(newBalanceMicro), from }
+    return {
+      credited: fromMicroUsd(amount),
+      newBalance: fromMicroUsd(newBalanceMicro),
+      from,
+      token: token.symbol,
+    }
   } catch (err) {
     await withStoreMutation(store => {
       delete store.pendingTxs[hashKey]

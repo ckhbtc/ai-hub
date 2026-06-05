@@ -21,7 +21,7 @@ test.beforeEach(() => {
   credits.__resetCreditStoreForTests()
 })
 
-test('migrates legacy float balances and mutates in micro-USDT', async () => {
+test('migrates legacy float balances and mutates in micro-USD credits', async () => {
   const wallet = '0x1111111111111111111111111111111111111111'
   writeFileSync(process.env.CREDITS_FILE!, JSON.stringify({
     balances: { [wallet]: 1.234567 },
@@ -37,8 +37,8 @@ test('migrates legacy float balances and mutates in micro-USDT', async () => {
 test('does not deduct when the balance is below message cost', async () => {
   const wallet = '0x2222222222222222222222222222222222222222'
   writeFileSync(process.env.CREDITS_FILE!, JSON.stringify({
-    schemaVersion: 2,
-    balancesMicroUsdt: { [wallet]: '9999' },
+    schemaVersion: 3,
+    balancesMicroUsd: { [wallet]: '9999' },
     processedTxs: {},
     pendingTxs: {},
   }))

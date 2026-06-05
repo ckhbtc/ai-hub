@@ -1,7 +1,7 @@
 /**
  * Credit-based payment middleware for Hono.
  *
- * Users deposit USDT to the facilitator address, then each chat message
+ * Users deposit USDC to the facilitator address, then each chat message
  * deducts from their credit balance. No per-message signing needed.
  *
  * If no FACILITATOR_PRIVATE_KEY is set, the middleware is a no-op (dev mode).
@@ -13,7 +13,7 @@ import { assertSameWallet, getSessionAddress } from './sessions'
 
 export function x402PaymentGate() {
   return async (c: Context, next: Next) => {
-    // Dev mode — no facilitator configured, pass through
+    // Dev mode, no facilitator configured, pass through
     if (!process.env.FACILITATOR_PRIVATE_KEY) {
       return next()
     }
@@ -37,7 +37,7 @@ export function x402PaymentGate() {
     if (!wallet) {
       return c.json({
         error: 'wallet_required',
-        message: `Connect your wallet to use the chat. Deposit USDT to ${getFacilitatorAddress()} to get credits.`,
+        message: `Connect your wallet to use the chat. Deposit USDC to ${getFacilitatorAddress()} to get credits.`,
         costPerMessage: getCostPerMessage(),
         facilitator: getFacilitatorAddress(),
       }, 402)
@@ -66,7 +66,7 @@ export function x402PaymentGate() {
     if (balance < cost) {
       return c.json({
         error: 'insufficient_credits',
-        message: `Insufficient credits. You have $${balance.toFixed(4)}, need $${cost.toFixed(4)} per message. Deposit USDT to the facilitator address in the sidebar.`,
+        message: `Insufficient credits. You have $${balance.toFixed(4)}, need $${cost.toFixed(4)} per message. Deposit USDC to the facilitator address in the sidebar.`,
         balance,
         costPerMessage: cost,
         facilitator: getFacilitatorAddress(),

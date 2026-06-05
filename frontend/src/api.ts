@@ -1,6 +1,6 @@
 /**
  * Typed API client for the ai-hub backend.
- * Uses a credit-based payment system — users deposit USDT then chat freely.
+ * Uses a credit-based payment system, users deposit USDC then chat freely.
  */
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
@@ -67,6 +67,9 @@ export async function createAuthSession(
 export async function getCredits(ethAddress: string): Promise<{
   balance: number
   costPerMessage: number
+  assetSymbol: string
+  depositTokenAddress: string
+  legacyDepositTokenAddress: string
   facilitator: string
 }> {
   const res = await fetch(`${BASE}/api/credits?wallet=${ethAddress}`)
@@ -77,6 +80,7 @@ export async function submitDeposit(txHash: string): Promise<{
   credited: number
   newBalance: number
   from: string
+  token: 'USDC' | 'USDT'
 }> {
   const res = await fetch(`${BASE}/api/deposit`, {
     method: 'POST',
@@ -111,7 +115,7 @@ export async function sendChat(
     const err = await res.json().catch(() => ({ message: res.statusText })) as { error?: string; message?: string }
     const msg = err.message || err.error || res.statusText
     if (res.status === 402) {
-      throw new Error(msg || 'Insufficient credits. Deposit USDT in the sidebar to get started.')
+      throw new Error(msg || 'Insufficient credits. Deposit USDC in the sidebar to get started.')
     }
     throw new Error(msg)
   }
@@ -140,7 +144,7 @@ export async function continueChatAfterTool(
     const err = await res.json().catch(() => ({ message: res.statusText })) as { error?: string; message?: string }
     const msg = err.message || err.error || res.statusText
     if (res.status === 402) {
-      throw new Error(msg || 'Insufficient credits. Deposit USDT in the sidebar.')
+      throw new Error(msg || 'Insufficient credits. Deposit USDC in the sidebar.')
     }
     throw new Error(msg)
   }
