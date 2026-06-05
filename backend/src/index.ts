@@ -169,8 +169,11 @@ app.post('/api/deposit/usdc-authorization', async (c) => {
     const result = await settleAuthorizedUsdcDeposit(body)
     return c.json(result)
   } catch (err) {
+    if (err instanceof Error && err.name === 'UsdcDepositClientError') {
+      return c.json({ error: err.message }, 400)
+    }
     console.error('/api/deposit/usdc-authorization error:', err)
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
   }
 })
 

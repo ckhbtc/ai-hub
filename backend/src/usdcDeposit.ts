@@ -88,30 +88,41 @@ export interface UsdcAuthorizationInput {
   signature?: string
 }
 
+export class UsdcDepositClientError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'UsdcDepositClientError'
+  }
+}
+
+function badRequest(message: string): never {
+  throw new UsdcDepositClientError(message)
+}
+
 function requireEvmAddress(value: unknown, label: string): `0x${string}` {
   if (typeof value !== 'string' || !EVM_ADDRESS_RE.test(value)) {
-    throw new Error(`${label} must be a valid EVM address`)
+    badRequest(`${label} must be a valid EVM address`)
   }
   return value as `0x${string}`
 }
 
 function requireUint(value: unknown, label: string): bigint {
   if (typeof value !== 'string' || !UINT_RE.test(value)) {
-    throw new Error(`${label} must be a decimal uint string`)
+    badRequest(`${label} must be a decimal uint string`)
   }
   return BigInt(value)
 }
 
 function requireBytes32(value: unknown): Hex {
   if (typeof value !== 'string' || !BYTES32_RE.test(value)) {
-    throw new Error('nonce must be bytes32 hex')
+    badRequest('nonce must be bytes32 hex')
   }
   return value as Hex
 }
 
 function requireSignature(value: unknown): Hex {
   if (typeof value !== 'string' || !SIGNATURE_RE.test(value)) {
-    throw new Error('signature must be a 65-byte hex signature')
+    badRequest('signature must be a 65-byte hex signature')
   }
   return value as Hex
 }
@@ -151,13 +162,13 @@ export async function settleAuthorizedUsdcDeposit(input: UsdcAuthorizationInput)
   const facilitator = getFacilitatorAddress() as `0x${string}`
 
   if (to.toLowerCase() !== facilitator.toLowerCase()) {
-    throw new Error('Authorization recipient must be the facilitator')
+    badRequest('Authorization recipient must be the facilitator')
   }
-  if (value <= 0n) throw new Error('Authorization value must be positive')
+  if (value <= 0n) badRequest('Authorization value must be positive')
 
   const now = BigInt(Math.floor(Date.now() / 1000))
-  if (now < validAfter - 10n) throw new Error('Authorization is not valid yet')
-  if (now >= validBefore) throw new Error('Authorization expired')
+  if (now < validAfter - 10n) badRequest('Authorization is not valid yet')
+  if (now >= validBefore) badRequest('Authorization expired')
 
   const publicClient = createPublicClient({ chain: injectiveEvm, transport: http(INJ_EVM_RPC) })
   const used = await publicClient.readContract({
@@ -166,7 +177,7 @@ export async function settleAuthorizedUsdcDeposit(input: UsdcAuthorizationInput)
     functionName: 'authorizationState',
     args: [from, nonce],
   }) as boolean
-  if (used) throw new Error('Authorization nonce has already been used')
+  if (used) badRequest('Authorization nonce has already been used')
 
   const balance = await publicClient.readContract({
     address: NATIVE_USDC,
@@ -174,14 +185,14 @@ export async function settleAuthorizedUsdcDeposit(input: UsdcAuthorizationInput)
     functionName: 'balanceOf',
     args: [from],
   }) as bigint
-  if (balance < value) throw new Error('Insufficient USDC balance')
+  if (balance < value) badRequest('Insufficient USDC balance')
 
   const signer = await recoverTypedDataAddress({
     ...buildUsdcAuthorizationTypedData({ from, to, value, validAfter, validBefore, nonce }),
     signature,
   })
   if (signer.toLowerCase() !== from.toLowerCase()) {
-    throw new Error('Invalid USDC authorization signature')
+    badRequest('Invalid USDC authorization signature')
   }
 
   const { v, r, s } = parseSignature(signature)
