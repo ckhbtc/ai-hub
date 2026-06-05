@@ -124,7 +124,7 @@ export async function wrapTokens(
       approveTxHash,
       depositTxHash,
       amount: params.amount,
-      token: params.token === 'USDT' ? 'WUSDT' : 'WUSDC',
+      token: 'WUSDT',
     }
   } finally {
     await switchBackTo(originalChainId)
@@ -171,7 +171,7 @@ export async function unwrapTokens(
     return {
       withdrawTxHash,
       amount: params.amount,
-      token: params.token === 'WUSDT' ? 'USDT' : 'USDC',
+      token: 'USDT',
     }
   } finally {
     await switchBackTo(originalChainId)

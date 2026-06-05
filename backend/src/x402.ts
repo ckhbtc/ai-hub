@@ -1,5 +1,5 @@
 /**
- * x402 payment protocol — server-side EVM helpers.
+ * x402 payment protocol, server-side EVM helpers.
  *
  * Uses viem to read Injective EVM (chain 1776) for token balances
  * and builds calldata for wrap/unwrap operations that the frontend
@@ -25,15 +25,11 @@ const injectiveEvm = defineChain({
 // ─── Token addresses (Injective EVM mainnet) ────────────────────────────────
 
 const NATIVE_USDT = '0x88f7F2b685F9692caf8c478f5BADF09eE9B1Cc13' as const
-const NATIVE_USDC = '0x2a25fbD67b3aE485e461fe55d9DbeF302B7D3989' as const
+const NATIVE_USDC = '0xa00C59fF5a080D2b954d0c75e46E22a0c371235a' as const
 
 function getWrappedAddress(token: string): `0x${string}` | null {
   if (token === 'WUSDT' || token === 'USDT') {
     const addr = process.env.WRAPPED_USDT_ADDRESS
-    return addr ? (addr as `0x${string}`) : null
-  }
-  if (token === 'WUSDC' || token === 'USDC') {
-    const addr = process.env.WRAPPED_USDC_ADDRESS
     return addr ? (addr as `0x${string}`) : null
   }
   return null
@@ -41,7 +37,7 @@ function getWrappedAddress(token: string): `0x${string}` | null {
 
 function getNativeAddress(token: string): `0x${string}` {
   if (token === 'USDT' || token === 'WUSDT') return NATIVE_USDT
-  if (token === 'USDC' || token === 'WUSDC') return NATIVE_USDC
+  if (token === 'USDC') return NATIVE_USDC
   throw new Error(`Unknown token: ${token}`)
 }
 
@@ -88,7 +84,7 @@ export async function getWrappedBalance(evmAddress: string, token: string) {
   const wrappedAddr = getWrappedAddress(token)
   const nativeAddr = getNativeAddress(token)
   const nativeSymbol = token === 'WUSDT' || token === 'USDT' ? 'USDT' : 'USDC'
-  const wrappedSymbol = token === 'WUSDT' || token === 'USDT' ? 'WUSDT' : 'WUSDC'
+  const wrappedSymbol = token === 'WUSDT' || token === 'USDT' ? 'WUSDT' : 'USDC'
 
   // Read native token balance
   const nativeRaw = await client.readContract({
@@ -97,6 +93,15 @@ export async function getWrappedBalance(evmAddress: string, token: string) {
     functionName: 'balanceOf',
     args: [addr],
   }) as bigint
+
+  if (token === 'USDC') {
+    return {
+      native: { symbol: 'USDC', balance: formatUnits(nativeRaw, 6), raw: nativeRaw.toString() },
+      wrapped: { symbol: 'USDC', balance: formatUnits(nativeRaw, 6), raw: nativeRaw.toString() },
+      wrappedContractDeployed: true,
+      note: 'Native USDC supports EIP-3009 and can be used for x402 payments directly.',
+    }
+  }
 
   // Read wrapped token balance (if contract deployed)
   let wrappedRaw = 0n
@@ -125,22 +130,21 @@ export async function getWrappedBalance(evmAddress: string, token: string) {
 
 export function listX402Tokens(): TokenInfo[] {
   const wrappedUsdt = process.env.WRAPPED_USDT_ADDRESS
-  const wrappedUsdc = process.env.WRAPPED_USDC_ADDRESS
 
   return [
     { symbol: 'USDT', address: NATIVE_USDT, decimals: 6, eip3009: false, name: 'Tether USD (native)' },
-    { symbol: 'USDC', address: NATIVE_USDC, decimals: 6, eip3009: false, name: 'USD Coin (IBC-bridged)' },
+    { symbol: 'USDC', address: NATIVE_USDC, decimals: 6, eip3009: true, name: 'USD Coin (native)' },
     ...(wrappedUsdt
       ? [{ symbol: 'WUSDT', address: wrappedUsdt, decimals: 6, eip3009: true, name: 'x402 Wrapped USDT' }]
-      : []),
-    ...(wrappedUsdc
-      ? [{ symbol: 'WUSDC', address: wrappedUsdc, decimals: 6, eip3009: true, name: 'x402 Wrapped USDC' }]
       : []),
   ]
 }
 
 export function buildWrapTxData(token: string, amount: string) {
   const nativeSymbol = token === 'USDT' || token === 'WUSDT' ? 'USDT' : 'USDC'
+  if (nativeSymbol === 'USDC') {
+    throw new Error('Native USDC already supports x402 payments. No wrapper is needed.')
+  }
   const wrappedAddr = getWrappedAddress(token)
   if (!wrappedAddr) {
     throw new Error(`No wrapper contract configured for ${token}. Set WRAPPED_${nativeSymbol}_ADDRESS in .env.`)
@@ -172,7 +176,7 @@ export function buildWrapTxData(token: string, amount: string) {
 
 export function buildUnwrapTxData(token: string, amount: string) {
   const wrappedAddr = getWrappedAddress(token)
-  const nativeSymbol = token === 'WUSDT' ? 'USDT' : token === 'WUSDC' ? 'USDC' : token
+  const nativeSymbol = token === 'WUSDT' ? 'USDT' : token
   if (!wrappedAddr) {
     throw new Error(`No wrapper contract configured for ${token}. Set WRAPPED_${nativeSymbol}_ADDRESS in .env.`)
   }
