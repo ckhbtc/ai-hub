@@ -1,6 +1,6 @@
 /**
  * Claude tool definitions + server-side execution.
- * Browser-side tools (trade, bridge execute, autosign) are NOT executed here —
+ * Browser-side tools (trade, bridge execute, autosign) are NOT executed here -
  * they are returned to the frontend with type: 'browser_tool'.
  */
 
@@ -9,7 +9,7 @@ import * as inj from './injective'
 import * as x402 from './x402'
 import { initAccount } from './faucet'
 
-// ─── Tool definitions (sent to Claude) ───────────────────────────────────────
+// Tool definitions sent to Claude
 
 export const TOOLS: Anthropic.Tool[] = [
   {
@@ -99,11 +99,11 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'trade_open',
     description:
-      'Open a perpetual futures position on Injective. Requires MetaMask signing in the browser. ' +
-      'IMPORTANT: When the user says "long 1 INJ" or "short 0.5 BTC", they mean QUANTITY — ' +
-      'multiply by the current oracle price to get notional_usdt. Use get_price first if needed. ' +
+      'Open a perpetual futures position on Injective through RFQ quote-based execution. Requires MetaMask signing in the browser. ' +
+      'IMPORTANT: When the user says "long 1 INJ" or "short 0.5 BTC", they mean QUANTITY - ' +
+      'multiply by the current oracle price to get notional_usdt. Use get_market_data first if needed. ' +
       'When the user says "$100 of INJ" or "100 dollars", that IS the notional_usdt directly. ' +
-      'Always confirm: "Open [side] [quantity] [symbol] (~$[notional]) at [leverage]x — confirm?"',
+      'Always confirm: "Open RFQ [side] [quantity] [symbol] (~$[notional]) at [leverage]x - confirm?"',
     input_schema: {
       type: 'object',
       properties: {
@@ -119,7 +119,7 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'trade_close',
     description:
-      'Close an open perpetual futures position on Injective. Requires MetaMask signing. ' +
+      'Close an open perpetual futures position on Injective through RFQ quote-based execution. Requires MetaMask signing. ' +
       'Always confirm with user before calling.',
     input_schema: {
       type: 'object',
@@ -148,9 +148,8 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'enable_autosign',
     description:
-      'Enable AutoSign (YOLO mode): grants an ephemeral key permission to trade on behalf of the user for 72 hours. ' +
-      'Requires one MetaMask signing popup to set up the on-chain AuthZ grant. ' +
-      'After this, all trades execute without wallet popups.',
+      'Enable AutoSign (YOLO mode): grants RFQ contract settlement permissions and grants an ephemeral key permission to accept RFQ quotes for 72 hours. ' +
+      'Requires MetaMask signing to set up the on-chain AuthZ grants. After this, RFQ trades execute without wallet popups.',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -238,7 +237,7 @@ export const TOOLS: Anthropic.Tool[] = [
   },
 ]
 
-// Tools that require MetaMask — returned to frontend for execution
+// Tools that require MetaMask - returned to frontend for execution
 export const BROWSER_TOOLS = new Set([
   'trade_open',
   'trade_close',

@@ -16,7 +16,7 @@ export function Sidebar({
   const suggestions = [
     'long 50 USDT INJ',
     'BTC price',
-    'INJ orderbook',
+    'INJ RFQ',
     'show open positions',
     'funding rates',
     'my balances',

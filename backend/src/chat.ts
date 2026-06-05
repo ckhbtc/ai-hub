@@ -10,7 +10,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { TOOLS, BROWSER_TOOLS, executeServerTool, enrichBrowserToolInput } from './tools'
 
-// Lazy init — ensures dotenv has loaded before reading the API key
+// Lazy init, ensures dotenv has loaded before reading the API key
 let _anthropic: Anthropic | null = null
 function getAnthropic(): Anthropic {
   if (!_anthropic) {
@@ -20,22 +20,22 @@ function getAnthropic(): Anthropic {
 }
 const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5-20251001'
 
-const SYSTEM_PROMPT = `You are an AI trading assistant for Injective Protocol — a high-performance on-chain perpetuals exchange.
+const SYSTEM_PROMPT = `You are an AI trading assistant for Injective Protocol, a high-performance on-chain perpetuals exchange.
 
 You can:
-- Query real-time market data: prices, orderbook depth, funding rates, market parameters
+- Query real-time market data: prices, funding rates, market parameters, and optional orderbook depth
 - Look up wallet balances and open positions with P&L
 - Resolve any Injective token denom to human-readable metadata
-- Execute perpetual futures trades (long/short, market orders) via MetaMask
+- Execute perpetual futures trades (long/short) through Injective RFQ quote-based settlement via MetaMask
 - Bridge USDC from Arbitrum to Injective USDT via deBridge
-- Set up AutoSign (YOLO mode) for session-based trading without per-trade MetaMask popups
+- Set up AutoSign (YOLO mode) for RFQ trading without per-trade MetaMask popups
 - Check x402 wrapped token balances (WUSDT/WUSDC) on Injective EVM
 - Wrap native USDT/USDC into x402-compatible WUSDT/WUSDC tokens via MetaMask
 - Unwrap WUSDT/WUSDC back to native tokens
 - Make micropayments to x402-protected API endpoints
 - Initialize fresh wallets with INJ for gas (faucet)
 
-CRITICAL — YOLO MODE RULES (when AutoSign is active):
+CRITICAL - YOLO MODE RULES (when AutoSign is active):
 - NEVER ask for confirmation. NEVER say "confirm?", "proceed?", "should I?", or "are you sure?".
 - When the user says "long 1 INJ 1x", immediately call get_market_data then trade_open in the SAME response. Do NOT send a text-only message first.
 - When the user says "close all positions", immediately fetch positions and start closing them ONE AT A TIME. No confirmation text.
@@ -47,7 +47,8 @@ When AutoSign is NOT active:
 General guidelines:
 - Always fetch real data using tools before answering questions about prices, balances, or positions
 - IMPORTANT: "long 1 INJ" means QUANTITY, not dollars. Fetch oracle price and compute notional_usdt = quantity × price. Only interpret as dollars if they say "$" or "dollars".
-- Format numbers cleanly — avoid raw markdown tables
+- Trades settle through RFQ. Do not describe them as orderbook market orders.
+- Format numbers cleanly, avoid raw markdown tables
 - For funding rates: positive = longs pay shorts, negative = shorts pay longs
 - If the user asks about a wallet, use their connected address automatically
 - Keep responses concise and data-forward
@@ -67,7 +68,7 @@ export interface ChatResponse {
     id:      string
     name:    string
     input:   Record<string, unknown>
-    // Serialised full message history — may contain ContentBlock[] content.
+    // Serialised full message history, may contain ContentBlock[] content.
     // Sent back in /continue so the conversation can resume seamlessly.
     pendingMessages: Anthropic.MessageParam[]
   }
@@ -81,7 +82,7 @@ export async function processChat(
     ? `${SYSTEM_PROMPT}\n\nConnected wallet: ${walletAddress}`
     : SYSTEM_PROMPT
 
-  // Use Anthropic's native MessageParam type internally — ConversationMessage is
+  // Use Anthropic's native MessageParam type internally. ConversationMessage is
   // only used at the public API boundary (plain text content for JSON serialisation).
   let currentMessages: Anthropic.MessageParam[] = messages.map(m => ({
     role:    m.role,
@@ -154,7 +155,7 @@ export async function processChat(
           partialResults.push({
             type: 'tool_result' as const,
             tool_use_id: extra.id,
-            content: 'Skipped — only one browser action can execute per turn. Please call this tool again in the next turn.',
+            content: 'Skipped, only one browser action can execute per turn. Please call this tool again in the next turn.',
             is_error: true,
           } as Anthropic.ToolResultBlockParam)
         }
@@ -175,7 +176,7 @@ export async function processChat(
         }
       }
 
-      // All server-side tools — execute them all in parallel
+      // All server-side tools, execute them all in parallel
       const toolResults = await Promise.all(
         toolUseBlocks.map(async tool => {
           try {
@@ -230,7 +231,7 @@ export async function continueAfterBrowserTool(
 
   // If the last message in pendingMessages is a user message containing only
   // tool_result blocks, those are server tool results from the same Claude turn.
-  // We must merge the browser result into that same message — the API requires
+  // We must merge the browser result into that same message. The API requires
   // all tool_result blocks for a given assistant turn in a single user message.
   const lastMsg = pendingMessages[pendingMessages.length - 1]
   const lastIsPartialToolResults =

@@ -20,8 +20,8 @@ function toolKind(name: string): 'destructive' | 'readonly' {
 
 function toolVerb(tool: BrowserToolPayload): string {
   const { name, input } = tool
-  if (name === 'trade_open')         return `OPEN · ${String(input.side ?? '').toUpperCase()}`
-  if (name === 'trade_close')        return `CLOSE · ${String(input.side ?? '').toUpperCase()}`
+  if (name === 'trade_open')         return `RFQ OPEN · ${String(input.side ?? '').toUpperCase()}`
+  if (name === 'trade_close')        return `RFQ CLOSE · ${String(input.side ?? '').toUpperCase()}`
   if (name === 'bridge_execute')     return 'BRIDGE'
   if (name === 'x402_pay')           return 'PAY'
   if (name === 'x402_wrap_tokens')   return 'WRAP'
