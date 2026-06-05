@@ -1,5 +1,5 @@
 /**
- * Injective read-only API — backend layer.
+ * Injective read-only API, backend layer.
  * Mirrors frontend/src/injective.ts but runs server-side.
  * Adds getOrderbook() and getFundingRate() not present in EasyPerps.
  */
@@ -19,8 +19,9 @@ const derivativesApi = new IndexerGrpcDerivativesApi(endpoints.indexer)
 const oracleApi      = new IndexerGrpcOracleApi(endpoints.indexer)
 const portfolioApi   = new IndexerGrpcAccountPortfolioApi(endpoints.indexer)
 
-const USDT_DECIMALS = 6
+const QUOTE_DECIMALS = 6
 const INJ_DECIMALS  = 18
+const USDC_QUOTE_DENOM = 'erc20:0xa00c59ff5a080d2b954d0c75e46e22a0c371235a'
 
 // ─── Token registry ───────────────────────────────────────────────────────────
 
@@ -34,6 +35,11 @@ const PEGGY_REGISTRY: Record<string, { symbol: string; decimals: number }> = {
   '0x6b175474e89094c44da98b954eedeac495271d0f': { symbol: 'DAI',   decimals: 18 },
   '0x4d224452801aced8b2f0aebe155379bb5d594381': { symbol: 'APE',   decimals: 18 },
   '0x93581991f68dbae1ea105233b67f7fa0d6bdee7b': { symbol: 'EVMOS', decimals: 18 },
+}
+
+const ERC20_REGISTRY: Record<string, { symbol: string; decimals: number }> = {
+  '0xa00c59ff5a080d2b954d0c75e46e22a0c371235a': { symbol: 'USDC', decimals: 6 },
+  '0x88f7f2b685f9692caf8c478f5badf09ee9b1cc13': { symbol: 'USDT', decimals: 6 },
 }
 
 const IBC_REGISTRY: Record<string, { symbol: string; decimals: number }> = {
@@ -52,7 +58,29 @@ function resolveDenom(denom: string): { symbol: string; decimals: number } | nul
     const hash = denom.slice(4).toUpperCase()
     return IBC_REGISTRY[hash] ?? { symbol: `IBC…${hash.slice(-6)}`, decimals: 6 }
   }
+  if (denom.startsWith('erc20:0x') || denom.startsWith('erc20:0X')) {
+    const addr = denom.slice('erc20:'.length).toLowerCase()
+    return ERC20_REGISTRY[addr] ?? null
+  }
   return null
+}
+
+function isUsdcPerpMarket(market: Record<string, unknown>, ticker: string): boolean {
+  const tickerUpper = ticker.toUpperCase()
+  const quoteSymbol = String((market['quoteToken'] as Record<string, unknown> | undefined)?.symbol ?? '').toUpperCase()
+  const quoteDenom = String(
+    market['quoteDenom'] ??
+    (market['quoteToken'] as Record<string, unknown> | undefined)?.denom ??
+    ''
+  ).toLowerCase()
+  const oracleQuote = String(market['oracleQuote'] ?? '').toUpperCase()
+
+  return (
+    quoteSymbol === 'USDC' ||
+    quoteDenom === USDC_QUOTE_DENOM ||
+    tickerUpper.includes('/USDC') ||
+    oracleQuote === 'USDC'
+  )
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -134,7 +162,7 @@ export interface TokenInfo {
   denom: string
   symbol: string
   decimals: number
-  type: 'native' | 'peggy' | 'ibc' | 'unknown'
+  type: 'native' | 'peggy' | 'ibc' | 'erc20' | 'unknown'
   contractAddress?: string
 }
 
@@ -159,6 +187,8 @@ export async function listMarkets(): Promise<PerpMarket[]> {
     if (!isPerpetual) continue
 
     const ticker = String(any['ticker'] ?? '')
+    if (!isUsdcPerpMarket(any, ticker)) continue
+
     const symbolFromTicker = ticker.split('/')[0] ?? ''
     const oracleBase = String(any['oracleBase'] ?? symbolFromTicker)
 
@@ -173,7 +203,7 @@ export async function listMarkets(): Promise<PerpMarket[]> {
       takerFeeRate: String(any['takerFeeRate'] ?? '0.001'),
       makerFeeRate: String(any['makerFeeRate'] ?? '-0.0001'),
       oracleBase,
-      oracleQuote: String(any['oracleQuote'] ?? 'USDT'),
+      oracleQuote: String(any['oracleQuote'] ?? 'USDC'),
       oracleType: String(any['oracleType'] ?? 'bandibc'),
     })
   }
@@ -228,7 +258,7 @@ export async function getMarketData(symbol: string): Promise<MarketData> {
 
 export async function getOrderbook(symbol: string, levels = 10): Promise<OrderbookInfo> {
   const market = await resolveMarket(symbol)
-  const SCALE  = new Decimal(10).pow(USDT_DECIMALS)
+  const SCALE  = new Decimal(10).pow(QUOTE_DECIMALS)
 
   const book = await derivativesApi.fetchOrderbookV2(market.marketId)
 
@@ -308,8 +338,8 @@ export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
   const portfolio = await portfolioApi.fetchAccountPortfolioBalances(injAddress)
   const result: BalanceInfo[] = []
 
-  // Only show tokens the user cares about (INJ, USDT, USDC). Skip dust like WETH, LINK, etc.
-  const RELEVANT_TOKENS = new Set(['INJ', 'USDT'])
+  // Only show tokens the user cares about (INJ, USDC, legacy USDT). Skip dust like WETH, LINK, etc.
+  const RELEVANT_TOKENS = new Set(['INJ', 'USDC', 'USDT'])
 
   for (const b of portfolio.bankBalancesList ?? []) {
     const denom = b.denom ?? ''
@@ -339,7 +369,7 @@ export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
 export async function getPositions(injAddress: string): Promise<PositionInfo[]> {
   const markets   = await listMarkets()
   const marketMap = new Map(markets.map(m => [m.marketId, m]))
-  const SCALE     = new Decimal(10).pow(USDT_DECIMALS)
+  const SCALE     = new Decimal(10).pow(QUOTE_DECIMALS)
 
   const { positions } = await derivativesApi.fetchPositionsV2({ address: injAddress })
   const result: PositionInfo[] = []
@@ -400,16 +430,22 @@ export function getTokenInfo(denom: string): TokenInfo {
     }
   }
 
+  if (denom.startsWith('erc20:0x') || denom.startsWith('erc20:0X')) {
+    const addr = denom.slice('erc20:'.length).toLowerCase()
+    const info = ERC20_REGISTRY[addr]
+    return {
+      denom,
+      symbol:          info?.symbol ?? 'UNKNOWN',
+      decimals:        info?.decimals ?? 18,
+      type:            'erc20',
+      contractAddress: addr,
+    }
+  }
+
   return { denom, symbol: denom, decimals: 18, type: 'unknown' }
 }
 
-// ─── Bridge quote (read-only, via DeBridge API) ───────────────────────────────
-
-const DEBRIDGE_API  = 'https://dln.debridge.finance/v1.0'
-const ARBITRUM_ID   = 42161
-const INJECTIVE_DLN = 100000029
-const BRIDGE_SRC    = '0xaf88d065e77c8cc2239327c5edb3a432268e5831'  // Arbitrum USDC
-const BRIDGE_DST    = '0x88f7f2b685f9692caf8c478f5badf09ee9b1cc13'  // Injective EVM USDT
+// ─── Bridge quote (read-only, via Circle CCTP V2) ────────────────────────────
 
 export interface BridgeQuote {
   srcToken:   string
@@ -418,36 +454,20 @@ export interface BridgeQuote {
   dstAmount:  string
   protocolFee: string
   fixFeeEth:  string
+  route:      string
 }
 
 export async function getBridgeQuote(amount: string): Promise<BridgeQuote> {
-  const srcAmountBase = BigInt(Math.round(parseFloat(amount) * 1e6)).toString()
-  const qs = new URLSearchParams({
-    srcChainId:              ARBITRUM_ID.toString(),
-    srcChainTokenIn:         BRIDGE_SRC,
-    srcChainTokenInAmount:   srcAmountBase,
-    dstChainId:              INJECTIVE_DLN.toString(),
-    dstChainTokenOut:        BRIDGE_DST,
-    dstChainTokenOutRecipient: '0x0000000000000000000000000000000000000001',
-  })
-  const resp = await fetch(`${DEBRIDGE_API}/dln/order/create-tx?${qs}`)
-  if (!resp.ok) throw new Error(`DeBridge API ${resp.status}`)
-  const raw = await resp.json() as {
-    estimation?: { srcChainTokenIn: { amount: string }; dstChainTokenOut: { amount: string; decimals: number } }
-    fixFee?: string
-    protocolFee?: string
-  }
-  const est = raw.estimation
-  if (!est) throw new Error('No estimation from DeBridge')
-  const dstAmount = (Number(est.dstChainTokenOut.amount) / 10 ** est.dstChainTokenOut.decimals).toFixed(4)
-  const fixEth    = (Number(raw.fixFee ?? '1000000000000000') / 1e18).toFixed(5)
+  const parsed = Number(amount)
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error('Invalid bridge amount')
 
   return {
     srcToken:    'USDC (Arbitrum)',
     srcAmount:   amount,
-    dstToken:    'USDT (Injective)',
-    dstAmount,
-    protocolFee: raw.protocolFee ?? '0',
-    fixFeeEth:   fixEth,
+    dstToken:    'USDC (Injective native)',
+    dstAmount:   parsed.toFixed(6).replace(/\.?0+$/, ''),
+    protocolFee: '0',
+    fixFeeEth:   '0',
+    route:       'Circle CCTP V2 standard burn-and-mint',
   }
 }

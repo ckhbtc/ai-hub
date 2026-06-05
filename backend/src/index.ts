@@ -61,10 +61,10 @@ app.post('/api/auth/session', async (c) => {
 })
 
 // ─── x402 payment gate on chat routes ────────────────────────────────────────
-// Requires FACILITATOR_PRIVATE_KEY + WRAPPED_USDT_ADDRESS in .env to activate.
+// Requires FACILITATOR_PRIVATE_KEY in .env to activate.
 // If not set, requests pass through freely (dev mode).
 app.use('/api/chat', x402PaymentGate())
-// /api/chat/continue is NOT gated — it resumes an already-paid conversation turn
+// /api/chat/continue is NOT gated, it resumes an already-paid conversation turn
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
@@ -128,11 +128,21 @@ app.post('/api/chat/continue', async (c) => {
 // ─── Credits ─────────────────────────────────────────────────────────────────
 
 app.get('/api/credits', async (c) => {
-  const { getBalance, getCostPerMessage, getFacilitatorAddress } = await import('./credits')
+  const {
+    getBalance,
+    getCostPerMessage,
+    getCreditAssetSymbol,
+    getDepositTokenAddress,
+    getFacilitatorAddress,
+    getLegacyDepositTokenAddress,
+  } = await import('./credits')
   const wallet = c.req.query('wallet') ?? ''
   return c.json({
     balance: getBalance(wallet),
     costPerMessage: getCostPerMessage(),
+    assetSymbol: getCreditAssetSymbol(),
+    depositTokenAddress: getDepositTokenAddress(),
+    legacyDepositTokenAddress: getLegacyDepositTokenAddress(),
     facilitator: getFacilitatorAddress(),
   })
 })
@@ -148,6 +158,25 @@ app.post('/api/deposit', async (c) => {
     return c.json(result)
   } catch (err) {
     console.error('/api/deposit error:', err)
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+  }
+})
+
+app.post('/api/relay-mint', async (c) => {
+  try {
+    const { message, attestation } = await c.req.json() as {
+      message?: string
+      attestation?: string
+    }
+    const { relayMint } = await import('./relayMint')
+    const ip =
+      c.req.header('cf-connecting-ip') ||
+      c.req.header('x-forwarded-for') ||
+      'unknown'
+    const txHash = await relayMint({ message, attestation }, ip)
+    return c.json({ txHash })
+  } catch (err) {
+    console.error('/api/relay-mint error:', err)
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
   }
 })
