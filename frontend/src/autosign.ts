@@ -1,11 +1,11 @@
 /**
- * AutoSign — ephemeral key AuthZ for wallet-popup-free trading.
+ * AutoSign - ephemeral key AuthZ for wallet-popup-free RFQ trading.
  *
  * Flow:
  *  Enable:
  *   1. Generate an ephemeral secp256k1 key in memory.
  *   2. Build MsgGrant (GenericAuthorization) from user's wallet → ephemeral key,
- *      covering MsgCreateDerivativeMarketOrder.
+ *      covering MsgExecuteContractCompat for RFQ accept_quote messages.
  *   3. Sign the grant transaction with MetaMask (one-time EIP-712 popup).
  *   4. Store the ephemeral key and its expiration in module-level state.
  *
@@ -13,7 +13,7 @@
  *   1. Build trading message with `injectiveAddress` = user's main address.
  *   2. Wrap it in MsgExec with `grantee` = ephemeral address.
  *   3. Sign + broadcast via MsgBroadcasterWithPk.broadcastWithFeeDelegation()
- *      using the ephemeral key — no MetaMask popup, no INJ needed.
+ *      using the ephemeral key, no MetaMask popup and no INJ needed.
  *
  *  Disable:
  *   - Clear module state. The on-chain grant remains valid until expiry
@@ -38,6 +38,12 @@ import {
 import { getNetworkEndpoints, getNetworkChainInfo, Network } from '@injectivelabs/networks'
 import { EvmChainId } from '@injectivelabs/ts-types'
 import type { Msgs } from '@injectivelabs/sdk-ts'
+import { APP_RFQ_AUTHZ_MSG_TYPES } from './rfqConstants'
+import {
+  buildRfqContractGrantMessages,
+  hasRfqContractGrants,
+  markRfqContractGrantsReady,
+} from './rfqAuthz'
 
 const NETWORK   = Network.MainnetSentry
 const endpoints = getNetworkEndpoints(NETWORK)
@@ -47,14 +53,14 @@ const authApi       = new ChainRestAuthApi(endpoints.rest)
 const tendermintApi = new ChainRestTendermintApi(endpoints.rest)
 const txApi         = new TxGrpcApi(endpoints.grpc)
 
+// Fee must match exactly between getEip712TypedData and createTransaction.
+const TX_FEE = {
+  amount: [{ denom: 'inj', amount: '64000000000000' }],
+  gas: '400000',
+}
+
 /** Message types granted to the ephemeral key. */
-const GRANT_MSG_TYPES = [
-  '/injective.exchange.v1beta1.MsgCreateDerivativeMarketOrder',
-  '/injective.exchange.v1beta1.MsgCreateDerivativeLimitOrder',
-  '/injective.exchange.v1beta1.MsgCancelDerivativeOrder',
-  '/injective.exchange.v1beta1.MsgBatchUpdateOrders',
-  '/injective.exchange.v1beta1.MsgIncreasePositionMargin',
-]
+const SESSION_GRANT_MSG_TYPES = APP_RFQ_AUTHZ_MSG_TYPES
 
 /** Grant validity: 3 days in seconds. */
 const GRANT_DURATION_S = 60 * 60 * 24 * 3
@@ -68,7 +74,7 @@ export interface AutoSignState {
   injectiveAddress: string
   /** Unix timestamp when the on-chain grant expires. */
   expiration: number
-  /** EVM chain ID from MetaMask at grant time — must match for fee-delegation signing. */
+  /** EVM chain ID from MetaMask at grant time, must match for fee-delegation signing. */
   evmChainId: number
 }
 
@@ -98,6 +104,19 @@ export async function enableAutoSign(
   _ethAddress: string,
   onProgress?: (msg: string) => void,
 ): Promise<void> {
+  onProgress?.('Checking RFQ contract authorization...')
+  if (!await hasRfqContractGrants(injAddress)) {
+    onProgress?.('Confirm RFQ contract authorization in wallet...')
+    await signAndBroadcastGrantTx({
+      injAddress,
+      msgs: buildRfqContractGrantMessages(injAddress),
+      memo: 'Authorize RFQ contract',
+      onProgress,
+      failureLabel: 'RFQ contract authorization',
+    })
+    markRfqContractGrantsReady(injAddress)
+  }
+
   onProgress?.('Generating ephemeral signing key…')
 
   // 1. Generate ephemeral key.
@@ -119,15 +138,15 @@ export async function enableAutoSign(
 
   if (!window.ethereum) throw new Error('MetaMask not available')
 
-  // Read MetaMask's active chain and pass it through — MetaMask v11+ enforces
+  // Read MetaMask's active chain and pass it through. MetaMask v11+ enforces
   // that the EIP-712 domain chainId matches the active chain.
   const evmChainId = await getEvmChainId()
 
-  // 3. Build MsgGrant for each trading message type.
+  // 3. Build MsgGrant for RFQ accept_quote execution.
   const nowInSeconds = Math.floor(Date.now() / 1000)
   const expiration   = nowInSeconds + GRANT_DURATION_S
 
-  const msgGrants = GRANT_MSG_TYPES.map(msgType =>
+  const msgGrants = SESSION_GRANT_MSG_TYPES.map(msgType =>
     MsgGrant.fromJSON({
       grantee:       ephemeralAddress,
       granter:       injAddress,
@@ -135,13 +154,6 @@ export async function enableAutoSign(
       expiration,
     })
   )
-
-  // Fee must match EXACTLY between getEip712TypedData and createTransaction.
-  // Use the SDK default explicitly so both sides agree on the same hash.
-  const TX_FEE = {
-    amount: [{ denom: 'inj', amount: '64000000000000' }],
-    gas: '400000',
-  }
 
   // 4. Sign with MetaMask EIP-712.
   const typedData = getEip712TypedData({
@@ -166,7 +178,7 @@ export async function enableAutoSign(
 
   const sigBytes = hexToBytes(sig.replace('0x', ''))
 
-  // 5. Assemble TxRaw — fee MUST match what was signed above.
+  // 5. Assemble TxRaw. Fee MUST match what was signed above.
   const { txRaw } = createTransaction({
     message:       msgGrants,
     memo:          'Enable AutoSign for AI Hub trading',
@@ -198,7 +210,78 @@ export async function enableAutoSign(
     evmChainId,
   }
 
-  onProgress?.('YOLO mode enabled — trades execute without prompting!')
+  onProgress?.('YOLO mode enabled, trades execute without prompting!')
+}
+
+async function signAndBroadcastGrantTx({
+  injAddress,
+  msgs,
+  memo,
+  onProgress,
+  failureLabel,
+}: {
+  injAddress: string
+  msgs: Msgs | Msgs[]
+  memo: string
+  onProgress?: (msg: string) => void
+  failureLabel: string
+}): Promise<{ txHash: string }> {
+  const [acct, block] = await Promise.all([
+    authApi.fetchAccount(injAddress),
+    tendermintApi.fetchLatestBlock(),
+  ])
+  const base = acct.account.base_account
+  const accountNumber = parseInt(base.account_number, 10)
+  const sequence = parseInt(base.sequence, 10)
+  const pubKey = base.pub_key?.key ?? ''
+  const timeoutHeight = parseInt(block.header.height, 10) + 20
+
+  if (!window.ethereum) throw new Error('MetaMask not available')
+  const evmChainId = await getEvmChainId()
+
+  const typedData = getEip712TypedData({
+    msgs,
+    tx: {
+      accountNumber: accountNumber.toString(),
+      sequence: sequence.toString(),
+      timeoutHeight: timeoutHeight.toString(),
+      chainId: chainInfo.chainId,
+      memo,
+    },
+    fee: TX_FEE,
+    evmChainId: evmChainId as unknown as EvmChainId,
+  })
+
+  const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' }) as string[]
+  const from = accounts[0]
+
+  onProgress?.('Confirm in wallet...')
+  const sig = await window.ethereum.request({
+    method: 'eth_signTypedData_v4',
+    params: [from, JSON.stringify(typedData)],
+  }) as string
+
+  const { txRaw } = createTransaction({
+    message: msgs,
+    memo,
+    pubKey: pubKey || ethereumPubkeyPlaceholder(),
+    sequence,
+    accountNumber,
+    chainId: chainInfo.chainId,
+    timeoutHeight,
+    signMode: SIGN_AMINO,
+    fee: TX_FEE,
+  })
+
+  const txRawEip712 = createTxRawEIP712(txRaw, createWeb3Extension({ evmChainId: evmChainId as unknown as EvmChainId }))
+  txRawEip712.signatures = [hexToBytes(sig.replace('0x', ''))]
+
+  onProgress?.('Broadcasting authorization...')
+  const response = await txApi.broadcast(txRawEip712)
+  if (response.code !== 0) {
+    throw new Error(`${failureLabel} failed (code ${response.code}): ${response.rawLog}`)
+  }
+  return { txHash: response.txHash }
 }
 
 // ─── Broadcast via ephemeral key ─────────────────────────────────────────────
@@ -222,10 +305,10 @@ export async function broadcastAutoSign(
   })
 
   // Broadcast with the ephemeral key using Injective fee delegation
-  // (web3 gateway sponsors the gas — ephemeral key needs no INJ).
+  // (web3 gateway sponsors the gas, ephemeral key needs no INJ).
   // Use the same EVM chain ID that MetaMask reported at grant time.
   // Injective mainnet validates the TypedDataChainID in the Web3Extension against
-  // the chain's expected EVM chain ID — using a mismatched value (e.g. 888) fails.
+  // the chain's expected EVM chain ID. A mismatched value, e.g. 888, fails.
   const broadcaster = new MsgBroadcasterWithPk({
     network:    NETWORK,
     endpoints,
