@@ -4,7 +4,7 @@
  * Adapted from agentic-trading/src/server/faucet.ts.
  * Uses viem instead of ethers (already a dependency via x402 integration).
  *
- * Sends 0.001 INJ if the wallet balance is below that threshold.
+ * Sends enough INJ to bring the wallet up to 0.01 INJ for gas.
  * Rate-limited: 1 request per wallet per 60 seconds.
  */
 
@@ -13,7 +13,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 
 const FAUCET_PRIVATE_KEY = process.env.FAUCET_PRIVATE_KEY ?? ''
 const INJ_EVM_RPC = 'https://sentry.evm-rpc.injective.network/'
-const MIN_BALANCE = parseEther('0.001') // 0.001 INJ
+const MIN_BALANCE = parseEther('0.01') // 0.01 INJ
 
 // Rate limit: 1 minute between attempts per wallet
 const _recentInits = new Map<string, number>()
@@ -49,7 +49,7 @@ export async function initAccount(evmAddress: string): Promise<{ txHash: string;
     return { txHash: '', status: 'already_funded' }
   }
 
-  // Top up to 0.001 INJ
+  // Top up to 0.01 INJ
   const topUp = MIN_BALANCE - balance
   const account = privateKeyToAccount(FAUCET_PRIVATE_KEY as `0x${string}`)
   const walletClient = createWalletClient({

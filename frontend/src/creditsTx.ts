@@ -1,6 +1,6 @@
 export const ERC20_DECIMALS = 6
 export const INJ_DECIMALS = 18
-export const INJ_GAS_FLOOR_RAW = 1_000_000_000_000_000n
+export const INJ_GAS_FLOOR_RAW = 10_000_000_000_000_000n
 export const TRANSFER_SIG = '0xa9059cbb'
 export const BALANCE_OF_SIG = '0x70a08231'
 

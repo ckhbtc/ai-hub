@@ -23,8 +23,8 @@ test('rejects token amounts with unsupported precision', () => {
 })
 
 test('detects wallets that need an INJ gas top-up', () => {
-  assert.equal(needsInjGasTopUp(999_999_999_999_999n), true)
-  assert.equal(needsInjGasTopUp(1_000_000_000_000_000n), false)
+  assert.equal(needsInjGasTopUp(9_999_999_999_999_999n), true)
+  assert.equal(needsInjGasTopUp(10_000_000_000_000_000n), false)
   assert.equal(formatInjAmount(123_456_789_123_456_789n), '0.123456')
 })
 
