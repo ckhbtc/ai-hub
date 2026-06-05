@@ -3,14 +3,18 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { recoverTypedDataAddress } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
 
 const tmp = mkdtempSync(join(tmpdir(), 'ai-hub-credits-'))
 process.env.CREDITS_FILE = join(tmp, 'credits.json')
 
 let credits: typeof import('./credits')
+let usdcDeposit: typeof import('./usdcDeposit')
 
 test.before(async () => {
   credits = await import('./credits')
+  usdcDeposit = await import('./usdcDeposit')
 })
 
 test.after(() => {
@@ -45,4 +49,20 @@ test('does not deduct when the balance is below message cost', async () => {
 
   assert.equal(await credits.deduct(wallet), false)
   assert.equal(credits.getBalance(wallet), 0.009999)
+})
+
+test('builds verifiable USDC authorization typed data', async () => {
+  const account = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
+  const typedData = usdcDeposit.buildUsdcAuthorizationTypedData({
+    from: account.address,
+    to: '0x1111111111111111111111111111111111111111',
+    value: 1_000_000n,
+    validAfter: 970n,
+    validBefore: 1300n,
+    nonce: '0x' + 'ab'.repeat(32),
+  })
+
+  const signature = await account.signTypedData(typedData)
+  const recovered = await recoverTypedDataAddress({ ...typedData, signature })
+  assert.equal(recovered.toLowerCase(), account.address.toLowerCase())
 })

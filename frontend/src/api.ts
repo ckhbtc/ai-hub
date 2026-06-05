@@ -94,6 +94,33 @@ export async function submitDeposit(txHash: string): Promise<{
   return res.json()
 }
 
+export async function submitAuthorizedUsdcDeposit(payload: {
+  from: string
+  to: string
+  value: string
+  validAfter: string
+  validBefore: string
+  nonce: string
+  signature: string
+}): Promise<{
+  credited: number
+  newBalance: number
+  from: string
+  token: 'USDC'
+  txHash: string
+}> {
+  const res = await fetch(`${BASE}/api/deposit/usdc-authorization`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error((err as { error?: string }).error ?? res.statusText)
+  }
+  return res.json()
+}
+
 export async function requestGasTopUp(evmAddress: string): Promise<{
   txHash: string
   status: string

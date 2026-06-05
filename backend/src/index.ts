@@ -162,6 +162,18 @@ app.post('/api/deposit', async (c) => {
   }
 })
 
+app.post('/api/deposit/usdc-authorization', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { settleAuthorizedUsdcDeposit } = await import('./usdcDeposit')
+    const result = await settleAuthorizedUsdcDeposit(body)
+    return c.json(result)
+  } catch (err) {
+    console.error('/api/deposit/usdc-authorization error:', err)
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+  }
+})
+
 app.post('/api/relay-mint', async (c) => {
   try {
     const { message, attestation } = await c.req.json() as {

@@ -78,6 +78,73 @@ export function buildBalanceOfData(ownerAddress: string): string {
   return `${BALANCE_OF_SIG}${encodeAddressArg(ownerAddress)}`
 }
 
+export function createBytes32Nonce(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  return `0x${Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')}`
+}
+
+export function buildUsdcDepositAuthorization(params: {
+  from: string
+  to: string
+  value: bigint
+  nonce?: string
+  nowSeconds?: number
+  timeoutSeconds?: number
+}) {
+  assertEvmAddress(params.from, 'from')
+  assertEvmAddress(params.to, 'to')
+  if (params.value <= 0n) throw new Error('Invalid amount')
+
+  const now = params.nowSeconds ?? Math.floor(Date.now() / 1000)
+  const validAfter = String(now - 30)
+  const validBefore = String(now + (params.timeoutSeconds ?? 300))
+  const nonce = params.nonce ?? createBytes32Nonce()
+
+  return {
+    typedData: {
+      types: {
+        EIP712Domain: [
+          { name: 'name',              type: 'string' },
+          { name: 'version',           type: 'string' },
+          { name: 'chainId',           type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+        ],
+        TransferWithAuthorization: [
+          { name: 'from',        type: 'address' },
+          { name: 'to',          type: 'address' },
+          { name: 'value',       type: 'uint256' },
+          { name: 'validAfter',  type: 'uint256' },
+          { name: 'validBefore', type: 'uint256' },
+          { name: 'nonce',       type: 'bytes32' },
+        ],
+      },
+      primaryType: 'TransferWithAuthorization' as const,
+      domain: {
+        name: 'USDC',
+        version: '2',
+        chainId: 1776,
+        verifyingContract: '0xa00C59fF5a080D2b954d0c75e46E22a0c371235a',
+      },
+      message: {
+        from: params.from,
+        to: params.to,
+        value: params.value.toString(),
+        validAfter,
+        validBefore,
+        nonce,
+      },
+    },
+    authorization: {
+      from: params.from,
+      to: params.to,
+      value: params.value.toString(),
+      validAfter,
+      validBefore,
+      nonce,
+    },
+  }
+}
+
 export function friendlyWalletError(error: unknown): string {
   const err = error as { code?: number; message?: string; data?: { message?: string } }
   const message = err.data?.message || err.message || 'Transaction failed'

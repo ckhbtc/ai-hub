@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { executeBridge } from './bridge'
-import { getCredits, requestGasTopUp, submitDeposit } from './api'
+import { getCredits, requestGasTopUp, submitAuthorizedUsdcDeposit, submitDeposit } from './api'
 import type { WalletInfo } from './wallet'
 import {
   buildBalanceOfData,
   buildErc20TransferData,
+  buildUsdcDepositAuthorization,
   decimalAmountToRaw,
   formatInjAmount,
   formatTokenAmount,
@@ -237,7 +238,58 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
     }
   }
 
+  async function sendAuthorizedUsdcDeposit(amountText: string) {
+    setBusy(true); setErr(null)
+    let originalChainId: string | null = null
+    try {
+      originalChainId = await window.ethereum!.request({ method: 'eth_chainId' }) as string
+      if (!facilitator) throw new Error('Facilitator not configured')
+      const amountRaw = decimalAmountToRaw(amountText)
+
+      setStatus('Switching to Injective EVM...')
+      await switchToInjectiveEvm()
+
+      setStatus('Checking USDC balance...')
+      const balance = await readTokenBalance(depositTokenAddress)
+      if (balance.raw < amountRaw) {
+        throw new Error(
+          `Insufficient USDC. Wallet has ${balance.exact} USDC, trying to deposit ${formatTokenAmount(amountRaw, 6, 6)} USDC.`,
+        )
+      }
+
+      const { typedData, authorization } = buildUsdcDepositAuthorization({
+        from: wallet.ethAddress,
+        to: facilitator,
+        value: amountRaw,
+      })
+
+      setStatus('Sign USDC deposit authorization...')
+      const signature = await window.ethereum!.request({
+        method: 'eth_signTypedData_v4',
+        params: [wallet.ethAddress, JSON.stringify(typedData)],
+      }) as string
+
+      setStatus('Settling gasless USDC deposit...')
+      const result = await submitAuthorizedUsdcDeposit({ ...authorization, signature })
+      setCredits(result.newBalance)
+      setStatus(`Credited ${result.credited.toFixed(2)} USDC`)
+      setShowDeposit(false)
+      await fetchCredits()
+      setTimeout(() => setStatus(''), 5000)
+    } catch (e) {
+      setErr(friendlyWalletError(e))
+      setStatus('')
+    } finally {
+      if (originalChainId) await switchBackToChain(originalChainId)
+      setBusy(false)
+    }
+  }
+
   async function handleDeposit() {
+    if (depositTokenAddress.toLowerCase() === NATIVE_USDC_ADDRESS.toLowerCase()) {
+      await sendAuthorizedUsdcDeposit(depositAmount)
+      return
+    }
     await sendCreditDeposit(depositAmount, depositTokenAddress, 'USDC')
   }
 

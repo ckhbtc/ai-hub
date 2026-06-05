@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   buildBalanceOfData,
   buildErc20TransferData,
+  buildUsdcDepositAuthorization,
   decimalAmountToRaw,
   formatInjAmount,
   formatTokenAmount,
@@ -43,4 +44,23 @@ test('builds balanceOf calldata for the connected wallet', () => {
     '0x70a08231' +
       '0000000000000000000000002222222222222222222222222222222222222222',
   )
+})
+
+test('builds USDC EIP-3009 deposit authorization typed data', () => {
+  const auth = buildUsdcDepositAuthorization({
+    from: '0x2222222222222222222222222222222222222222',
+    to: '0x1111111111111111111111111111111111111111',
+    value: 1_000_000n,
+    nonce: '0x' + 'ab'.repeat(32),
+    nowSeconds: 1000,
+    timeoutSeconds: 300,
+  })
+
+  assert.equal(auth.authorization.value, '1000000')
+  assert.equal(auth.authorization.validAfter, '970')
+  assert.equal(auth.authorization.validBefore, '1300')
+  assert.equal(auth.typedData.domain.name, 'USDC')
+  assert.equal(auth.typedData.domain.version, '2')
+  assert.equal(auth.typedData.domain.chainId, 1776)
+  assert.equal(auth.typedData.message.nonce, '0x' + 'ab'.repeat(32))
 })
