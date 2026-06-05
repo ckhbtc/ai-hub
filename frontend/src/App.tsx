@@ -246,6 +246,7 @@ export default function App() {
             notionalUsdt: toolInput.notional_usdt as number,
             leverage:     toolInput.leverage as number,
             slippage:     (toolInput.slippage as number | undefined) ?? 0.01,
+            onProgress:   setToolStatus,
           })
           break
         }
@@ -259,6 +260,7 @@ export default function App() {
             side:     toolInput.side as 'long' | 'short',
             quantity: toolInput.quantity as string,
             slippage: (toolInput.slippage as number | undefined) ?? 0.05,
+            onProgress: setToolStatus,
           })
           break
         }

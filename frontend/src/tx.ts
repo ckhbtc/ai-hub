@@ -6,9 +6,6 @@
  */
 
 import {
-  MsgCreateDerivativeMarketOrder,
-  OrderTypeMap,
-  Address,
   getEip712TypedData,
   createTxRawEIP712,
   createWeb3Extension,
@@ -18,15 +15,24 @@ import {
   ChainRestAuthApi,
   ChainRestTendermintApi,
   IndexerGrpcOracleApi,
-  derivativePriceToChainPriceToFixed,
-  derivativeMarginToChainMarginToFixed,
-  derivativeQuantityToChainQuantityToFixed,
 } from '@injectivelabs/sdk-ts'
+import type { Msgs } from '@injectivelabs/sdk-ts'
 import { getNetworkEndpoints, getNetworkChainInfo, Network } from '@injectivelabs/networks'
 import { EvmChainId } from '@injectivelabs/ts-types'
 import Decimal from 'decimal.js'
 import type { PerpMarket } from './injective'
 import { isAutoSignActive, broadcastAutoSign } from './autosign'
+import {
+  buildAcceptQuoteMessage,
+  buildRfqCloseInput,
+  buildRfqOpenInput,
+  requestRfqQuotes,
+} from './rfq'
+import {
+  buildRfqContractGrantMessages,
+  hasRfqContractGrants,
+  markRfqContractGrantsReady,
+} from './rfqAuthz'
 
 const NETWORK = Network.MainnetSentry
 const endpoints = getNetworkEndpoints(NETWORK)
@@ -37,36 +43,14 @@ const tendermintApi = new ChainRestTendermintApi(endpoints.rest)
 const txApi = new TxGrpcApi(endpoints.grpc)
 const oracleApi = new IndexerGrpcOracleApi(endpoints.indexer)
 
-// USDT has 6 decimals on Injective
-const QUOTE_DECIMALS = 6
 const TIMEOUT_BLOCKS = 20
 
 const TX_FEE = {
   amount: [{ denom: 'inj', amount: '500000000000000' }],
-  gas: '2000000',
+  gas: '3000000',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function toChainPrice(humanPrice: Decimal, minPriceTickSize: string): string {
-  const raw = derivativePriceToChainPriceToFixed({ value: humanPrice.toFixed(), quoteDecimals: QUOTE_DECIMALS })
-  // Quantize to minPriceTickSize (already in chain units, e.g. "1000")
-  const tick = new Decimal(minPriceTickSize)
-  const quantized = new Decimal(raw).div(tick).floor().mul(tick)
-  return quantized.toFixed(0)
-}
-
-function toChainMargin(humanMargin: Decimal): string {
-  return derivativeMarginToChainMarginToFixed({ value: humanMargin.toFixed(), quoteDecimals: QUOTE_DECIMALS })
-}
-
-function toChainQuantity(humanQty: Decimal, tickSize: Decimal): string {
-  // Quantize to tick size first, then convert
-  const tickDecimals = Math.max(0, -tickSize.e)
-  const quantized = humanQty.div(tickSize).floor().mul(tickSize)
-    .toDecimalPlaces(tickDecimals, Decimal.ROUND_DOWN)
-  return derivativeQuantityToChainQuantityToFixed({ value: quantized.toFixed(tickDecimals) })
-}
 
 // ─── Account & block queries ─────────────────────────────────────────────────
 
@@ -125,7 +109,7 @@ async function getEvmChainId(): Promise<number> {
  * User pays gas in INJ. For gasless trades, use YOLO mode (fee delegation).
  */
 async function signAndBroadcast(
-  msg: any,
+  msg: Msgs | Msgs[],
   injAddress: string,
   ethAddress: string,
   memo: string,
@@ -181,6 +165,34 @@ async function signAndBroadcast(
   return { txHash: response.txHash }
 }
 
+async function fetchOraclePrice(market: PerpMarket): Promise<Decimal> {
+  const oraclePriceRes = await oracleApi.fetchOraclePrice({
+    baseSymbol: market.oracleBase,
+    quoteSymbol: market.oracleQuote,
+    oracleType: market.oracleType,
+  })
+
+  const oraclePrice = new Decimal(oraclePriceRes.price)
+  if (!oraclePrice.isFinite() || oraclePrice.lte(0)) {
+    throw new Error(`Oracle price unavailable for ${market.symbol}`)
+  }
+  return oraclePrice
+}
+
+async function ensureRfqContractAuthorization(
+  injAddress: string,
+  ethAddress: string,
+  onProgress?: (msg: string) => void,
+): Promise<void> {
+  onProgress?.('Checking RFQ contract authorization...')
+  if (await hasRfqContractGrants(injAddress)) return
+
+  onProgress?.('Confirm RFQ contract authorization in wallet...')
+  const grants = buildRfqContractGrantMessages(injAddress)
+  await signAndBroadcast(grants, injAddress, ethAddress, 'Authorize RFQ contract')
+  markRfqContractGrantsReady(injAddress)
+}
+
 // ─── Open trade ───────────────────────────────────────────────────────────────
 
 export interface OpenTradeParams {
@@ -191,6 +203,7 @@ export interface OpenTradeParams {
   notionalUsdt: number   // e.g. 100 = $100
   leverage: number        // e.g. 5
   slippage?: number       // default 0.01
+  onProgress?: (msg: string) => void
 }
 
 export interface TxResult {
@@ -198,61 +211,56 @@ export interface TxResult {
 }
 
 export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
-  const { injAddress, ethAddress, market, side, notionalUsdt, leverage, slippage = 0.01 } = params
+  const { injAddress, ethAddress, market, side, notionalUsdt, leverage, slippage = 0.01, onProgress } = params
 
-  // Derive subaccount ID from eth address
-  const subaccountId = Address.fromHex(ethAddress).getSubaccountId(0)
+  if (!isAutoSignActive()) {
+    await ensureRfqContractAuthorization(injAddress, ethAddress, onProgress)
+  }
 
-  // 3. Build order params
-  const notional = new Decimal(notionalUsdt)
-  const leverageDec = new Decimal(leverage)
-  const isBuy = side === 'long'
-  const slippageDec = new Decimal(slippage)
-
-  const oraclePriceRes = await oracleApi.fetchOraclePrice({
-    baseSymbol: market.oracleBase,
-    quoteSymbol: market.oracleQuote,
-    oracleType: market.oracleType,
-  }).catch(() => null)
-
-  const oraclePrice = oraclePriceRes?.price
-    ? new Decimal(oraclePriceRes.price)
-    : new Decimal('1') // fallback
-
-  const slippageMultiplier = isBuy
-    ? new Decimal(1).plus(slippageDec)
-    : new Decimal(1).minus(slippageDec)
-  const priceWithSlippage = oraclePrice.mul(slippageMultiplier)
-
-  const qty = notional.div(oraclePrice)
-  if (qty.lte(0)) throw new Error('Computed quantity is zero — check oracle price and notional amount')
-  const tickSize = new Decimal(market.minQuantityTickSize)
-  const chainQty = toChainQuantity(qty, tickSize)
-  if (new Decimal(chainQty).lte(0)) throw new Error('Quantity rounds to zero after tick quantization — try a larger size')
-
-  const chainPrice = toChainPrice(priceWithSlippage, market.minPriceTickSize)
-  const marginHuman = priceWithSlippage.mul(qty).div(leverageDec)
-  const chainMargin = toChainMargin(marginHuman)
-
-  // 4. Build message
-  const msg = MsgCreateDerivativeMarketOrder.fromJSON({
-    marketId: market.marketId,
-    subaccountId,
-    injectiveAddress: injAddress,
-    orderType: isBuy ? OrderTypeMap.BUY : OrderTypeMap.SELL,
-    price: chainPrice,
-    margin: chainMargin,
-    quantity: chainQty,
-    feeRecipient: injAddress,
+  onProgress?.('Fetching oracle price...')
+  const oraclePrice = await fetchOraclePrice(market)
+  const rfqInput = buildRfqOpenInput({
+    market,
+    oraclePrice,
+    side,
+    notionalUsdt,
+    leverage,
+    slippage,
   })
+  if (new Decimal(rfqInput.quantity).lte(0)) {
+    throw new Error('Quantity rounds to zero after RFQ tick quantization - try a larger size')
+  }
+
+  onProgress?.('Requesting RFQ quotes...')
+  const quoteResult = await requestRfqQuotes({
+    requestAddress: injAddress,
+    marketId: market.marketId,
+    ...rfqInput,
+  })
+  if (!quoteResult.rfqId || quoteResult.quotes.length === 0) {
+    const suffix = quoteResult.rejectionReasons.length
+      ? ` (${quoteResult.rejectionReasons.join('; ')})`
+      : ''
+    throw new Error(`No usable RFQ quotes returned${suffix}`)
+  }
+
+  const msg = buildAcceptQuoteMessage({
+    sender: injAddress,
+    rfqId: quoteResult.rfqId,
+    marketId: market.marketId,
+    ...rfqInput,
+    quotes: quoteResult.quotes,
+  }) as unknown as Msgs
 
   // YOLO mode: ephemeral key, fee delegation, no wallet popup
   if (isAutoSignActive()) {
+    onProgress?.('Broadcasting RFQ accept via AutoSign...')
     return broadcastAutoSign(msg, injAddress)
   }
 
   // Regular: wallet signs, direct broadcast (user pays gas)
-  return signAndBroadcast(msg, injAddress, ethAddress, `open ${side} ${market.symbol}`)
+  onProgress?.('Confirm RFQ accept in wallet...')
+  return signAndBroadcast(msg, injAddress, ethAddress, `rfq open ${side} ${market.symbol}`)
 }
 
 // ─── Close trade ──────────────────────────────────────────────────────────────
@@ -264,58 +272,59 @@ export interface CloseTradeParams {
   side: 'long' | 'short'   // existing position side
   quantity: string          // position quantity to close
   slippage?: number
+  onProgress?: (msg: string) => void
 }
 
 export async function closeTrade(params: CloseTradeParams): Promise<TxResult> {
-  const { injAddress, ethAddress, market, side, quantity, slippage = 0.05 } = params
+  const { injAddress, ethAddress, market, side, quantity, slippage = 0.05, onProgress } = params
 
-  const subaccountId = Address.fromHex(ethAddress).getSubaccountId(0)
+  if (!isAutoSignActive()) {
+    await ensureRfqContractAuthorization(injAddress, ethAddress, onProgress)
+  }
 
-  const isClosingLong = side === 'long'
-  const closeOrderType = isClosingLong ? OrderTypeMap.SELL : OrderTypeMap.BUY
-
-  const oraclePriceRes = await oracleApi.fetchOraclePrice({
-    baseSymbol: market.oracleBase,
-    quoteSymbol: market.oracleQuote,
-    oracleType: market.oracleType,
-  }).catch(() => null)
-
-  const oraclePrice = oraclePriceRes?.price
-    ? new Decimal(oraclePriceRes.price)
-    : new Decimal('1')
-
-  const slippageDec = new Decimal(slippage)
-  // For close: long closes via SELL (slippage down), short closes via BUY (slippage up)
-  const slippageMultiplier = isClosingLong
-    ? new Decimal(1).minus(slippageDec)
-    : new Decimal(1).plus(slippageDec)
-  const priceWithSlippage = oraclePrice.mul(slippageMultiplier)
-
-  const qty = new Decimal(quantity)
-  const chainPrice = toChainPrice(priceWithSlippage, market.minPriceTickSize)
-  // For reduce-only close, margin = 0 (or minimal — chain specific)
-  const chainMargin = '0'
-  const tickSize = new Decimal(market.minQuantityTickSize)
-  const chainQty = toChainQuantity(qty, tickSize)
-
-  const msg = MsgCreateDerivativeMarketOrder.fromJSON({
-    marketId: market.marketId,
-    subaccountId,
-    injectiveAddress: injAddress,
-    orderType: closeOrderType,
-    price: chainPrice,
-    margin: chainMargin,
-    quantity: chainQty,
-    feeRecipient: injAddress,
+  onProgress?.('Fetching oracle price...')
+  const oraclePrice = await fetchOraclePrice(market)
+  const rfqInput = buildRfqCloseInput({
+    market,
+    oraclePrice,
+    side,
+    quantity,
+    slippage,
   })
+  if (new Decimal(rfqInput.quantity).lte(0)) {
+    throw new Error('Close quantity rounds to zero after RFQ tick quantization')
+  }
+
+  onProgress?.('Requesting RFQ quotes...')
+  const quoteResult = await requestRfqQuotes({
+    requestAddress: injAddress,
+    marketId: market.marketId,
+    ...rfqInput,
+  })
+  if (!quoteResult.rfqId || quoteResult.quotes.length === 0) {
+    const suffix = quoteResult.rejectionReasons.length
+      ? ` (${quoteResult.rejectionReasons.join('; ')})`
+      : ''
+    throw new Error(`No usable RFQ close quotes returned${suffix}`)
+  }
+
+  const msg = buildAcceptQuoteMessage({
+    sender: injAddress,
+    rfqId: quoteResult.rfqId,
+    marketId: market.marketId,
+    ...rfqInput,
+    quotes: quoteResult.quotes,
+  }) as unknown as Msgs
 
   // YOLO mode: ephemeral key, fee delegation, no wallet popup
   if (isAutoSignActive()) {
+    onProgress?.('Broadcasting RFQ close via AutoSign...')
     return broadcastAutoSign(msg, injAddress)
   }
 
   // Regular: wallet signs, direct broadcast (user pays gas)
-  return signAndBroadcast(msg, injAddress, ethAddress, `close ${market.symbol}`)
+  onProgress?.('Confirm RFQ close in wallet...')
+  return signAndBroadcast(msg, injAddress, ethAddress, `rfq close ${market.symbol}`)
 }
 
 // ─── Utils ───────────────────────────────────────────────────────────────────
@@ -332,7 +341,7 @@ function hexToBytes(hex: string): Uint8Array {
  * When an account has never sent a tx its pubKey is empty in chain state.
  * For EIP-712 we can supply the compressed Ethereum public key derived from address.
  * createTransaction accepts a base64-encoded compressed pubkey.
- * We use a placeholder here — the signature itself authenticates the sender.
+ * We use a placeholder here, the signature itself authenticates the sender.
  */
 function ethereumPubkeyFromAddress(_ethAddress: string): string {
   // For new accounts without on-chain pubkey, supply a minimal valid placeholder.
