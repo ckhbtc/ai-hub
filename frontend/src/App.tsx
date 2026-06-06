@@ -276,13 +276,13 @@ export default function App() {
           if (!wallet) throw new Error('Wallet not connected')
           await enableAutoSign(wallet.injAddress, wallet.ethAddress, setToolStatus)
           setAutoSign(true)
-          result = { success: true, message: 'AutoSign enabled' }
+          result = { success: true, message: 'Trading authorization enabled' }
           break
         }
         case 'disable_autosign': {
           disableAutoSign()
           setAutoSign(isAutoSignActive())
-          result = { success: true, message: 'AutoSign disabled' }
+          result = { success: true, message: 'Trading authorization disabled' }
           break
         }
         case 'x402_wrap_tokens': {

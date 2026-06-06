@@ -148,13 +148,13 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'enable_autosign',
     description:
-      'Enable AutoSign (YOLO mode): grants RFQ contract settlement permissions and grants an ephemeral key permission to accept RFQ quotes for 72 hours. ' +
+      'Enable trading authorization: grants RFQ contract settlement permissions and grants an ephemeral key permission to accept RFQ quotes for 72 hours. ' +
       'Requires MetaMask signing to set up the on-chain AuthZ grants. After this, RFQ trades execute without wallet popups.',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'disable_autosign',
-    description: 'Disable AutoSign and clear the ephemeral key. Trading will require MetaMask confirmation again.',
+    description: 'Disable trading authorization and clear the ephemeral key. Trading will require MetaMask confirmation again.',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
   // ─── x402 payment protocol tools ─────────────────────────────────────────

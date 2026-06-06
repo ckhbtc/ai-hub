@@ -123,7 +123,7 @@ export async function enableAutoSign(
   const { privateKey: privKey } = PrivateKey.generate()
   const ephemeralAddress        = privKey.toBech32()
 
-  onProgress?.('Confirm the YOLO mode grant in wallet (one-time)…')
+  onProgress?.('Confirm trading authorization in wallet...')
 
   // 2. Fetch account + block info needed to build the grant tx.
   const [acct, block] = await Promise.all([
@@ -163,7 +163,7 @@ export async function enableAutoSign(
       sequence:      sequence.toString(),
       timeoutHeight: timeoutHeight.toString(),
       chainId:       chainInfo.chainId,
-      memo:          'Enable AutoSign for AI Hub trading',
+      memo:          'Enable trading authorization for AI Hub',
     },
     fee: TX_FEE,
     evmChainId: evmChainId as unknown as EvmChainId,
@@ -181,7 +181,7 @@ export async function enableAutoSign(
   // 5. Assemble TxRaw. Fee MUST match what was signed above.
   const { txRaw } = createTransaction({
     message:       msgGrants,
-    memo:          'Enable AutoSign for AI Hub trading',
+    memo:          'Enable trading authorization for AI Hub',
     pubKey:        pubKey || ethereumPubkeyPlaceholder(),
     sequence,
     accountNumber,
@@ -196,7 +196,7 @@ export async function enableAutoSign(
   txRawEip712.signatures = [sigBytes]
 
   // 6. Broadcast grant tx.
-  onProgress?.('Broadcasting AutoSign grant…')
+  onProgress?.('Broadcasting trading authorization...')
   const response = await txApi.broadcast(txRawEip712)
   if (response.code !== 0) {
     throw new Error(`AutoSign grant failed (code ${response.code}): ${response.rawLog}`)
@@ -210,7 +210,7 @@ export async function enableAutoSign(
     evmChainId,
   }
 
-  onProgress?.('YOLO mode enabled, trades execute without prompting!')
+  onProgress?.('Trading authorization enabled.')
 }
 
 async function signAndBroadcastGrantTx({

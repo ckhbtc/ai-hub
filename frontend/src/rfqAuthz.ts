@@ -1,12 +1,11 @@
 import {
+  MsgGrant,
   getGenericAuthorizationFromMessageType,
 } from '@injectivelabs/sdk-ts'
 import type { Msgs } from '@injectivelabs/sdk-ts'
 import { getNetworkEndpoints, Network } from '@injectivelabs/networks'
-import { MsgGrant as AuthzMsgGrantPb } from '@injectivelabs/core-proto-ts-v2/generated/cosmos/authz/v1beta1/tx_pb.js'
 import {
   GenericAuthorization as GenericAuthorizationPb,
-  Grant as AuthzGrantPb,
 } from '@injectivelabs/core-proto-ts-v2/generated/cosmos/authz/v1beta1/authz_pb.js'
 import { RFQ_CONTRACT_ADDRESS, RFQ_CONTRACT_AUTHZ_MSG_TYPES } from './rfqConstants'
 
@@ -14,133 +13,18 @@ const NETWORK = Network.MainnetSentry
 const endpoints = getNetworkEndpoints(NETWORK)
 const grantReadyCache = new Set<string>()
 
-type Eip712TypeMap = Map<string, { name: string; type: string }[]>
-
-interface NoExpirationGrantParams {
-  granter: string
-  grantee: string
-  messageType: string
-}
-
-class NoExpirationGenericGrant {
-  private readonly params: NoExpirationGrantParams
-
-  constructor(params: NoExpirationGrantParams) {
-    this.params = params
-  }
-
-  toProto() {
-    const authorization = getGenericAuthorizationFromMessageType(this.params.messageType)
-    const grant = AuthzGrantPb.create({ authorization })
-    return AuthzMsgGrantPb.create({
-      granter: this.params.granter,
-      grantee: this.params.grantee,
-      grant,
-    })
-  }
-
-  toData() {
-    return {
-      '@type': '/cosmos.authz.v1beta1.MsgGrant',
-      ...this.toProto(),
-    }
-  }
-
-  toAmino() {
-    return {
-      type: 'cosmos-sdk/MsgGrant',
-      value: {
-        granter: this.params.granter,
-        grantee: this.params.grantee,
-        grant: {
-          authorization: {
-            type: 'cosmos-sdk/GenericAuthorization',
-            value: { msg: this.normalizedMessageType() },
-          },
-        },
-      },
-    }
-  }
-
-  toEip712() {
-    return this.toAmino()
-  }
-
-  toEip712Types(): Eip712TypeMap {
-    return new Map([
-      [
-        'TypeGrant',
-        [
-          { name: 'authorization', type: 'TypeGrantAuthorization' },
-        ],
-      ],
-      [
-        'TypeGrantAuthorization',
-        [
-          { name: 'type', type: 'string' },
-          { name: 'value', type: 'TypeGrantAuthorizationValue' },
-        ],
-      ],
-      [
-        'TypeGrantAuthorizationValue',
-        [
-          { name: 'msg', type: 'string' },
-        ],
-      ],
-      [
-        'MsgValue',
-        [
-          { name: 'granter', type: 'string' },
-          { name: 'grantee', type: 'string' },
-          { name: 'grant', type: 'TypeGrant' },
-        ],
-      ],
-    ])
-  }
-
-  toWeb3() {
-    return this.toWeb3Gw()
-  }
-
-  toWeb3Gw() {
-    return {
-      '@type': '/cosmos.authz.v1beta1.MsgGrant',
-      granter: this.params.granter,
-      grantee: this.params.grantee,
-      grant: {
-        authorization: {
-          '@type': '/cosmos.authz.v1beta1.GenericAuthorization',
-          msg: this.normalizedMessageType(),
-        },
-      },
-    }
-  }
-
-  toDirectSign() {
-    return {
-      type: '/cosmos.authz.v1beta1.MsgGrant',
-      message: this.toProto(),
-    }
-  }
-
-  toBinary() {
-    return AuthzMsgGrantPb.toBinary(this.toProto())
-  }
-
-  private normalizedMessageType(): string {
-    return this.params.messageType.startsWith('/')
-      ? this.params.messageType
-      : `/${this.params.messageType}`
-  }
-}
+// "Indefinite" RFQ contract grant, matching dev/bet. AuthZ revoke remains the
+// explicit way to clear access, but EIP-712 still gets a concrete string value.
+export const RFQ_CONTRACT_GRANT_EXPIRATION_S = 4_070_908_800 // 2099-01-01T00:00:00Z
 
 export function buildRfqContractGrantMessages(granter: string): Msgs[] {
   return RFQ_CONTRACT_AUTHZ_MSG_TYPES.map(messageType =>
-    new NoExpirationGenericGrant({
+    MsgGrant.fromJSON({
       granter,
       grantee: RFQ_CONTRACT_ADDRESS,
-      messageType,
-    }) as unknown as Msgs
+      authorization: getGenericAuthorizationFromMessageType(messageType),
+      expiration: RFQ_CONTRACT_GRANT_EXPIRATION_S,
+    })
   )
 }
 
@@ -160,10 +44,13 @@ function grantMsgType(grant: Record<string, unknown>): string {
   )
 }
 
-function grantHasNoExpiration(grant: Record<string, unknown>): boolean {
+export function grantHasUsableExpiration(grant: Record<string, unknown>, nowMs = Date.now()): boolean {
   if (!('expiration' in grant)) return true
   const expiration = grant.expiration
-  return expiration === null || expiration === undefined || expiration === ''
+  if (expiration === null || expiration === undefined || expiration === '') return true
+  if (typeof expiration !== 'string') return false
+  const expiresAt = Date.parse(expiration)
+  return Number.isFinite(expiresAt) && expiresAt > nowMs
 }
 
 export async function hasRfqContractGrants(granter: string): Promise<boolean> {
@@ -180,7 +67,7 @@ export async function hasRfqContractGrants(granter: string): Promise<boolean> {
 
   const present = new Set(
     grants
-      .filter(grantHasNoExpiration)
+      .filter(grant => grantHasUsableExpiration(grant))
       .map(grantMsgType)
       .filter(Boolean)
   )

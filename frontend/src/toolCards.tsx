@@ -26,8 +26,8 @@ function toolVerb(tool: BrowserToolPayload): string {
   if (name === 'x402_pay')           return 'PAY'
   if (name === 'x402_wrap_tokens')   return 'WRAP'
   if (name === 'x402_unwrap_tokens') return 'UNWRAP'
-  if (name === 'enable_autosign')    return 'AUTOSIGN'
-  if (name === 'disable_autosign')   return 'AUTOSIGN'
+  if (name === 'enable_autosign')    return 'TRADING AUTH'
+  if (name === 'disable_autosign')   return 'TRADING AUTH'
   return name.toUpperCase()
 }
 
@@ -39,8 +39,8 @@ function toolMarket(tool: BrowserToolPayload): string {
   if (name === 'bridge_execute') return 'USDC → USDC'
   if (name === 'x402_pay')       return String(input.url ?? '')
   if (name.startsWith('x402_'))  return String(input.token ?? '')
-  if (name === 'enable_autosign')  return 'enable'
-  if (name === 'disable_autosign') return 'disable'
+  if (name === 'enable_autosign')  return 'enable trading'
+  if (name === 'disable_autosign') return 'disable trading'
   return ''
 }
 

@@ -22,7 +22,7 @@ export function Sidebar({
     'my balances',
     'close all profitable',
     'bridge 100 USDC',
-    'enable autosign',
+    'enable trading',
   ]
   const shortInj = wallet
     ? `${wallet.injAddress.slice(0, 4)}…${wallet.injAddress.slice(-4)}`
@@ -59,22 +59,23 @@ export function Sidebar({
 
       {wallet && (
         <div className="section">
-          <div className="section-label">Mode</div>
+          <div className="section-label">Trading</div>
           <div className={`mode-row ${autoSign ? 'dim' : ''}`}>
             <div className="mode-row-text">
-              <div className="mode-title">Standard</div>
-              <div className="mode-desc">Each trade asks before signing</div>
+              <div className="mode-title">Enable trading</div>
+              <div className="mode-desc">Authorize RFQ trading once</div>
             </div>
             <button
               className={`toggle ${autoSign ? 'on' : ''}`}
               onClick={onToggleMode}
-              aria-label={autoSign ? 'Disable YOLO' : 'Enable YOLO'}
+              aria-label={autoSign ? 'Disable trading' : 'Enable trading'}
+              title={autoSign ? 'Disable trading' : 'Enable trading'}
             />
           </div>
           <div className={`mode-row ${autoSign ? '' : 'dim'}`}>
             <div className="mode-row-text">
-              <div className="mode-title">YOLO</div>
-              <div className="mode-desc">AuthZ session · trades auto-sign</div>
+              <div className="mode-title">Trading enabled</div>
+              <div className="mode-desc">RFQ AuthZ session active</div>
             </div>
           </div>
           {modeStatus && <div className="side-status">{modeStatus}</div>}

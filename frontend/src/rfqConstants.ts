@@ -8,6 +8,7 @@ export const RFQ_REQUEST_TIMEOUT_MS = 15_000
 export const RFQ_CONTRACT_AUTHZ_MSG_TYPES = [
   '/cosmos.bank.v1beta1.MsgSend',
   '/injective.exchange.v2.MsgPrivilegedExecuteContract',
+  '/injective.exchange.v2.MsgBatchUpdateOrders',
 ]
 
 export const APP_RFQ_AUTHZ_MSG_TYPES = [
