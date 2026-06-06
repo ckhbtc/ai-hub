@@ -70,6 +70,16 @@ function makePreparedAutoSign(tx: Uint8Array): RfqPreparedAutoSign {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 test('prepared RFQ signer lookup handles protobuf-wrapped pubkeys in gateway order', () => {
   const { privateKey } = PrivateKey.generate()
   const autosignPubKey = base64ToUint8Array(privateKey.toPublicKey().toBase64())
@@ -180,4 +190,73 @@ test('gateway autosign execution prepares, locally signs, relays, and polls with
   assert.equal(result.rfqId, 42)
   assert.equal(result.quotesAccepted, 1)
   assert.equal(result.broadcastPath, 'relay')
+})
+
+test('gateway autosign can return after relay while confirmation polls in background', async () => {
+  const { privateKey } = PrivateKey.generate()
+  const autosignPubKey = base64ToUint8Array(privateKey.toPublicKey().toBase64())
+  const feePayerPubKey = new Uint8Array(33)
+  feePayerPubKey[0] = 2
+  feePayerPubKey[32] = 9
+  const txRaw = makePreparedTxRaw({
+    autosignPubKey,
+    feePayerPubKey,
+    autosignIndex: 0,
+  })
+  const prepared = makePreparedAutoSign(CosmosTxV1Beta1TxPb.TxRaw.toBinary(txRaw))
+  prepared.feePayerPubKey = { key: uint8ArrayToBase64(feePayerPubKey), type: 'secp256k1' }
+  const session: AutoSignSession = {
+    privateKeyHex: privateKey.toPrivateKeyHex(),
+    granteeAddress: privateKey.toBech32(),
+    granterAddress: 'inj1granter',
+    expiration: 4_070_908_800,
+    evmChainId: 1776,
+    scopeVersion: 2,
+  }
+  const confirmation = deferred<{ txHash?: string; code?: number; rawLog?: string }>()
+  let fetchTxPollCalled = false
+  let confirmationResolved = false
+
+  const result = await executeRfqGatewayAutoSign({
+    session,
+    marketId: '0xmarket',
+    accountDetails: null,
+    waitForConfirmation: false,
+    input: {
+      direction: 'long',
+      margin: '5',
+      quantity: '1',
+      worstPrice: '11',
+    },
+    gatewayApi: {
+      async fetchPrepareAutoSign() {
+        return prepared
+      },
+    },
+    relayBroadcast: async () => ({ txHash: 'ABC', relayMs: 1, clientRelayMs: 1, duplicate: false }),
+    txApiClient: {
+      async broadcast() {
+        throw new Error('direct broadcast should not be used when relay is configured')
+      },
+      async fetchTxPoll(txHash) {
+        fetchTxPollCalled = true
+        assert.equal(txHash, 'ABC')
+        return confirmation.promise
+      },
+    },
+  })
+
+  assert.equal(result.txHash, 'ABC')
+  assert.equal(result.status, 'matched')
+  assert.equal(result.settlementPending, true)
+  assert.equal(fetchTxPollCalled, true)
+  result.confirmation?.then(() => {
+    confirmationResolved = true
+  })
+  await Promise.resolve()
+  assert.equal(confirmationResolved, false)
+
+  confirmation.resolve({ txHash: 'ABC', code: 0 })
+  assert.deepEqual(await result.confirmation, { txHash: 'ABC', code: 0, rawLog: undefined })
+  assert.equal(confirmationResolved, true)
 })

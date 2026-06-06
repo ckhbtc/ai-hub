@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { connectMetaMask, onAccountsChanged, signWalletMessage, type WalletInfo } from './wallet'
 import { isAutoSignActive, enableAutoSign, disableAutoSign } from './autosign'
-import { openTrade } from './tx'
-import { closeTrade } from './tx'
+import { closeTrade, openTrade, serializeTxResultForTool, type TxResult } from './tx'
 import { executeBridge } from './bridge'
 import { resolveMarket } from './injective'
 import { createAuthSession, requestAuthChallenge, sendChat, continueChatAfterTool, type ConversationMessage, type BrowserToolPayload } from './api'
@@ -173,6 +172,25 @@ export default function App() {
     return msg
   }
 
+  function appendAssistantMessage(content: string) {
+    addMessage('assistant', content)
+    conversationRef.current.push({ role: 'assistant', content })
+  }
+
+  function watchTradeConfirmation(result: TxResult) {
+    const confirmation = result.confirmation
+    if (!confirmation) return
+
+    const submittedHash = result.txHash
+    confirmation.then(confirmed => {
+      appendAssistantMessage(`RFQ settlement confirmed.\n\nTX: ${confirmed.txHash || submittedHash}`)
+    }).catch(err => {
+      const message = err instanceof Error ? err.message : String(err)
+      appendAssistantMessage(`RFQ settlement failed on-chain.\n\nTX: ${submittedHash}\n\n${message}`)
+      setError(message)
+    })
+  }
+
   const YOLO_AUTO_TOOLS = new Set(['trade_open', 'trade_close'])
 
   async function handleChatResponse(res: Awaited<ReturnType<typeof sendChat>>) {
@@ -248,7 +266,7 @@ export default function App() {
         case 'trade_open': {
           if (!wallet) throw new Error('Wallet not connected')
           const market = await resolveMarket(toolInput.symbol as string)
-          result = await openTrade({
+          const tradeResult = await openTrade({
             injAddress:  wallet.injAddress,
             ethAddress:  wallet.ethAddress,
             market,
@@ -258,13 +276,15 @@ export default function App() {
             slippage:     (toolInput.slippage as number | undefined) ?? 0.01,
             onProgress:   setToolStatus,
           })
+          watchTradeConfirmation(tradeResult)
+          result = serializeTxResultForTool(tradeResult)
           setAutoSign(isAutoSignActive(wallet.injAddress))
           break
         }
         case 'trade_close': {
           if (!wallet) throw new Error('Wallet not connected')
           const market = await resolveMarket(toolInput.symbol as string)
-          result = await closeTrade({
+          const tradeResult = await closeTrade({
             injAddress: wallet.injAddress,
             ethAddress: wallet.ethAddress,
             market,
@@ -273,6 +293,8 @@ export default function App() {
             slippage: (toolInput.slippage as number | undefined) ?? 0.05,
             onProgress: setToolStatus,
           })
+          watchTradeConfirmation(tradeResult)
+          result = serializeTxResultForTool(tradeResult)
           setAutoSign(isAutoSignActive(wallet.injAddress))
           break
         }

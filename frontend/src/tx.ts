@@ -10,7 +10,10 @@ import { getNetworkEndpoints, Network } from '@injectivelabs/networks'
 import Decimal from 'decimal.js'
 import type { PerpMarket } from './injective'
 import { enableAutoSign, getAutoSignSession, type AutoSignSession } from './autosign'
-import { executeRfqGatewayAutoSign } from './rfqGateway'
+import {
+  executeRfqGatewayAutoSign,
+  type RfqGatewayExecutionResult,
+} from './rfqGateway'
 import { buildRfqCloseInput, buildRfqOpenInput } from './rfq'
 
 const NETWORK = Network.MainnetSentry
@@ -65,8 +68,25 @@ export interface OpenTradeParams {
   onProgress?: (msg: string) => void
 }
 
-export interface TxResult {
-  txHash: string
+export type TxResult = RfqGatewayExecutionResult
+
+export type SerializableTxResult = Omit<TxResult, 'confirmation' | 'txHash'> & {
+  txHash?: string
+  txHashPending?: boolean
+}
+
+export function serializeTxResultForTool(result: TxResult): SerializableTxResult {
+  const { confirmation: _confirmation, txHash, ...rest } = result
+  if (result.settlementPending) {
+    return {
+      ...rest,
+      txHashPending: true,
+    }
+  }
+  return {
+    ...rest,
+    txHash,
+  }
 }
 
 export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
@@ -92,6 +112,7 @@ export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
     marketId: market.marketId,
     input: rfqInput,
     onProgress,
+    waitForConfirmation: false,
   })
 }
 
@@ -129,5 +150,6 @@ export async function closeTrade(params: CloseTradeParams): Promise<TxResult> {
     marketId: market.marketId,
     input: rfqInput,
     onProgress,
+    waitForConfirmation: false,
   })
 }

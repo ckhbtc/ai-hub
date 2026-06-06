@@ -108,8 +108,15 @@ export interface ExecuteRfqGatewayAutoSignParams {
     clientRelayMs?: number | null
     duplicate?: boolean
   }>) | null
+  waitForConfirmation?: boolean
   maxPrepareAttempts?: number
   minQuoteTtlMs?: number
+}
+
+export interface RfqGatewayConfirmationResult {
+  txHash: string
+  code: number
+  rawLog?: string
 }
 
 export interface RfqGatewayExecutionResult {
@@ -119,6 +126,9 @@ export interface RfqGatewayExecutionResult {
   bestPrice: string | null
   quotesWaitMs: number
   broadcastPath: string
+  status: 'matched' | 'confirmed'
+  settlementPending: boolean
+  confirmation?: Promise<RfqGatewayConfirmationResult>
 }
 
 const accountCache = new Map<string, { accountDetails: AccountDetails | null; ts: number }>()
@@ -401,6 +411,23 @@ class RfqGatewayApi implements RfqGatewayApiLike {
 
 const defaultGatewayApi = new RfqGatewayApi()
 
+async function confirmRfqSettlement(
+  txHash: string,
+  txApiClient: TxApiLike,
+): Promise<RfqGatewayConfirmationResult> {
+  const txResponse = await txApiClient.fetchTxPoll(txHash)
+  const code = Number(txResponse.code || 0)
+  if (code !== 0) {
+    throw new Error(`RFQ settlement failed (code ${txResponse.code}): ${txResponse.rawLog}`)
+  }
+
+  return {
+    txHash: txResponse.txHash || txHash,
+    code,
+    rawLog: txResponse.rawLog,
+  }
+}
+
 export function getPreparedTxSignatureIndexes(
   txRaw: TxRaw,
   {
@@ -529,6 +556,7 @@ export async function executeRfqGatewayAutoSign({
   txApiClient = txApi,
   relayBroadcast = relaySignedRfqTxRaw,
   accountDetails,
+  waitForConfirmation = true,
   minQuoteTtlMs = RFQ_MIN_QUOTE_TTL_MS,
   maxPrepareAttempts = RFQ_PREPARE_MAX_ATTEMPTS,
 }: ExecuteRfqGatewayAutoSignParams): Promise<RfqGatewayExecutionResult> {
@@ -597,19 +625,38 @@ export async function executeRfqGatewayAutoSign({
       broadcastPath = 'direct'
     }
 
-    const txResponse = await txApiClient.fetchTxPoll(txHash)
-    if (Number(txResponse.code || 0) !== 0) {
-      throw new Error(`RFQ settlement failed (code ${txResponse.code}): ${txResponse.rawLog}`)
-    }
-
     advanceCachedRfqAccountSequence(autosignAddress)
-    return {
-      txHash: txResponse.txHash || txHash,
+
+    const baseResult = {
+      txHash,
       rfqId: prepared.rfqId,
       quotesAccepted: prepared.quotes.length,
       bestPrice: prepared.quotes[0]?.price ?? null,
       quotesWaitMs: prepared.quotesWaitMs,
       broadcastPath,
+    }
+    const confirmation = confirmRfqSettlement(txHash, txApiClient)
+      .catch(err => {
+        invalidateRfqAccountCache(autosignAddress)
+        throw err
+      })
+
+    if (!waitForConfirmation) {
+      onProgress?.('RFQ matched. Awaiting chain confirmation...')
+      return {
+        ...baseResult,
+        status: 'matched',
+        settlementPending: true,
+        confirmation,
+      }
+    }
+
+    const confirmed = await confirmation
+    return {
+      ...baseResult,
+      txHash: confirmed.txHash,
+      status: 'confirmed',
+      settlementPending: false,
     }
   } catch (err) {
     invalidateRfqAccountCache(autosignAddress)
