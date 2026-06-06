@@ -70,16 +70,17 @@ app.use('/api/chat', x402PaymentGate())
 
 app.post('/api/chat', async (c) => {
   try {
-    const { messages, walletAddress } = await c.req.json() as {
+    const { messages, walletAddress, autoSignActive } = await c.req.json() as {
       messages:      ConversationMessage[]
       walletAddress?: string
+      autoSignActive?: boolean
     }
 
     if (!Array.isArray(messages)) {
       return c.json({ error: 'messages must be an array' }, 400)
     }
 
-    const result = await processChat(messages, walletAddress)
+    const result = await processChat(messages, walletAddress, Boolean(autoSignActive))
     return c.json(result)
   } catch (err) {
     const chargedWallet = c.get('chargedWallet') as string | undefined
@@ -100,7 +101,7 @@ app.post('/api/chat', async (c) => {
 
 app.post('/api/chat/continue', async (c) => {
   try {
-    const { pendingMessages, toolId, toolResult, toolError, walletAddress } = await c.req.json()
+    const { pendingMessages, toolId, toolResult, toolError, walletAddress, autoSignActive } = await c.req.json()
 
     if (!Array.isArray(pendingMessages) || !toolId) {
       return c.json({ error: 'pendingMessages and toolId are required' }, 400)
@@ -116,7 +117,7 @@ app.post('/api/chat/continue', async (c) => {
     }
 
     const result = await continueAfterBrowserTool(
-      pendingMessages, toolId, toolResult, toolError, walletAddress
+      pendingMessages, toolId, toolResult, toolError, walletAddress, Boolean(autoSignActive)
     )
     return c.json(result)
   } catch (err) {
@@ -193,6 +194,28 @@ app.post('/api/relay-mint', async (c) => {
   } catch (err) {
     console.error('/api/relay-mint error:', err)
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+  }
+})
+
+app.post('/api/rfq-broadcast', async (c) => {
+  try {
+    const { txBytes } = await c.req.json() as { txBytes?: string }
+    console.info('[RFQ-TIMING] relay.received', JSON.stringify({
+      at: new Date().toISOString(),
+      txBytes: typeof txBytes === 'string' ? txBytes.length : 0,
+    }))
+    const { relayRfqBroadcast } = await import('./rfqBroadcast')
+    const result = await relayRfqBroadcast({ txBytes: txBytes || '' })
+    return c.json({
+      ok: true,
+      txHash: result.txHash,
+      relayMs: result.relayMs,
+      duplicate: Boolean(result.duplicate),
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('/api/rfq-broadcast error:', err)
+    return c.json({ error: message }, /Invalid/.test(message) ? 400 : 502)
   }
 })
 

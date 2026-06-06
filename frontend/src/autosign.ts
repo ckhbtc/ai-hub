@@ -62,8 +62,8 @@ const TX_FEE = {
 /** Message types granted to the ephemeral key. */
 const SESSION_GRANT_MSG_TYPES = APP_RFQ_AUTHZ_MSG_TYPES
 
-/** Grant validity: 3 days in seconds. */
-const GRANT_DURATION_S = 60 * 60 * 24 * 3
+/** Grant expiry: 2099-01-01 UTC, matching the long-lived RFQ auth scope used by bet. */
+const GRANT_EXPIRATION_S = 4_070_908_800
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -76,24 +76,134 @@ export interface AutoSignState {
   expiration: number
   /** EVM chain ID from MetaMask at grant time, must match for fee-delegation signing. */
   evmChainId: number
+  /** User wallet that granted this session. */
+  granterAddress?: string
+  /** Connected EVM wallet for this session. */
+  ethAddress?: string
+  /** AuthZ scope version for local persistence migrations. */
+  scopeVersion?: number
+}
+
+export interface AutoSignSession {
+  privateKeyHex: string
+  granteeAddress: string
+  granterAddress: string
+  ethAddress?: string
+  expiration: number
+  evmChainId: number
+  scopeVersion: number
 }
 
 let _state: AutoSignState | null = null
 
-export function getAutoSignState(): AutoSignState | null {
+const STORAGE_KEY = 'hub-rfq-grantee'
+const AUTHZ_SCOPE_VERSION = 2
+
+function nowSec(): number {
+  return Math.floor(Date.now() / 1000)
+}
+
+function readSessions(): Record<string, AutoSignSession> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeSessions(map: Record<string, AutoSignSession>): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
+  } catch {
+    // ignore
+  }
+}
+
+function stateFromSession(session: AutoSignSession): AutoSignState {
+  return {
+    privateKey: session.privateKeyHex,
+    injectiveAddress: session.granteeAddress,
+    expiration: session.expiration,
+    evmChainId: session.evmChainId,
+    granterAddress: session.granterAddress,
+    ethAddress: session.ethAddress,
+    scopeVersion: session.scopeVersion,
+  }
+}
+
+function sessionFromState(state: AutoSignState, granterAddress?: string): AutoSignSession | null {
+  const granter = granterAddress || state.granterAddress
+  if (!granter) return null
+  return {
+    privateKeyHex: state.privateKey,
+    granteeAddress: state.injectiveAddress,
+    granterAddress: granter,
+    ethAddress: state.ethAddress,
+    expiration: state.expiration,
+    evmChainId: state.evmChainId,
+    scopeVersion: state.scopeVersion || 1,
+  }
+}
+
+function readStoredSession(granterAddress: string): AutoSignSession | null {
+  const map = readSessions()
+  const entry = map[granterAddress]
+  if (!entry) return null
+  if (entry.expiration && entry.expiration <= nowSec()) {
+    delete map[granterAddress]
+    writeSessions(map)
+    return null
+  }
+  if (Number(entry.scopeVersion || 1) < AUTHZ_SCOPE_VERSION) return null
+  return entry
+}
+
+function storeSession(session: AutoSignSession): void {
+  const map = readSessions()
+  map[session.granterAddress] = session
+  writeSessions(map)
+}
+
+export function getAutoSignState(granterAddress?: string): AutoSignState | null {
   if (!_state) return null
-  if (_state.expiration <= Math.floor(Date.now() / 1000)) {
+  if (_state.expiration <= nowSec()) {
     _state = null
+    return null
+  }
+  if (granterAddress && _state.granterAddress && _state.granterAddress !== granterAddress) {
     return null
   }
   return _state
 }
 
-export function isAutoSignActive(): boolean {
+export function getAutoSignSession(granterAddress: string): AutoSignSession | null {
+  const state = getAutoSignState(granterAddress)
+  const session = state ? sessionFromState(state, granterAddress) : null
+  if (session && Number(session.scopeVersion || 1) >= AUTHZ_SCOPE_VERSION) return session
+
+  const stored = readStoredSession(granterAddress)
+  if (!stored) return null
+  _state = stateFromSession(stored)
+  return stored
+}
+
+export function isAutoSignActive(granterAddress?: string): boolean {
+  if (granterAddress) return getAutoSignSession(granterAddress) !== null
   return getAutoSignState() !== null
 }
 
-export function disableAutoSign(): void {
+export function disableAutoSign(granterAddress?: string): void {
+  const granter = granterAddress || _state?.granterAddress
+  if (granter) {
+    const map = readSessions()
+    if (granter in map) {
+      delete map[granter]
+      writeSessions(map)
+    }
+  }
   _state = null
 }
 
@@ -101,29 +211,19 @@ export function disableAutoSign(): void {
 
 export async function enableAutoSign(
   injAddress: string,
-  _ethAddress: string,
+  ethAddress: string,
   onProgress?: (msg: string) => void,
 ): Promise<void> {
-  onProgress?.('Checking RFQ contract authorization...')
-  if (!await hasRfqContractGrants(injAddress)) {
-    onProgress?.('Confirm RFQ contract authorization in wallet...')
-    await signAndBroadcastGrantTx({
-      injAddress,
-      msgs: buildRfqContractGrantMessages(injAddress),
-      memo: 'Authorize RFQ contract',
-      onProgress,
-      failureLabel: 'RFQ contract authorization',
-    })
-    markRfqContractGrantsReady(injAddress)
-  }
-
   onProgress?.('Generating ephemeral signing key…')
 
   // 1. Generate ephemeral key.
   const { privateKey: privKey } = PrivateKey.generate()
   const ephemeralAddress        = privKey.toBech32()
 
-  onProgress?.('Confirm trading authorization in wallet...')
+  onProgress?.('Checking RFQ authorization scope...')
+  const needsRfqContractGrants = !await hasRfqContractGrants(injAddress)
+
+  onProgress?.('Sign trading authorization in wallet...')
 
   // 2. Fetch account + block info needed to build the grant tx.
   const [acct, block] = await Promise.all([
@@ -143,17 +243,19 @@ export async function enableAutoSign(
   const evmChainId = await getEvmChainId()
 
   // 3. Build MsgGrant for RFQ accept_quote execution.
-  const nowInSeconds = Math.floor(Date.now() / 1000)
-  const expiration   = nowInSeconds + GRANT_DURATION_S
+  const expiration = GRANT_EXPIRATION_S
 
-  const msgGrants = SESSION_GRANT_MSG_TYPES.map(msgType =>
-    MsgGrant.fromJSON({
-      grantee:       ephemeralAddress,
-      granter:       injAddress,
-      authorization: getGenericAuthorizationFromMessageType(msgType),
-      expiration,
-    })
-  )
+  const msgGrants = [
+    ...SESSION_GRANT_MSG_TYPES.map(msgType =>
+      MsgGrant.fromJSON({
+        grantee:       ephemeralAddress,
+        granter:       injAddress,
+        authorization: getGenericAuthorizationFromMessageType(msgType),
+        expiration,
+      })
+    ),
+    ...(needsRfqContractGrants ? buildRfqContractGrantMessages(injAddress) : []),
+  ]
 
   // 4. Sign with MetaMask EIP-712.
   const typedData = getEip712TypedData({
@@ -201,14 +303,20 @@ export async function enableAutoSign(
   if (response.code !== 0) {
     throw new Error(`AutoSign grant failed (code ${response.code}): ${response.rawLog}`)
   }
+  if (needsRfqContractGrants) markRfqContractGrantsReady(injAddress)
 
   // 7. Store ephemeral key + Injective EVM chain ID.
-  _state = {
-    privateKey:       privKey.toPrivateKeyHex(),
-    injectiveAddress: ephemeralAddress,
+  const session: AutoSignSession = {
+    privateKeyHex:    privKey.toPrivateKeyHex(),
+    granteeAddress:   ephemeralAddress,
+    granterAddress:   injAddress,
+    ethAddress,
     expiration,
     evmChainId,
+    scopeVersion: AUTHZ_SCOPE_VERSION,
   }
+  storeSession(session)
+  _state = stateFromSession(session)
 
   onProgress?.('Trading authorization enabled.')
 }

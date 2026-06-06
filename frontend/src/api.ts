@@ -144,6 +144,7 @@ export async function sendChat(
   walletAddress?: string,
   ethAddress?:    string,
   authToken?:     string,
+  autoSignActive?: boolean,
 ): Promise<ChatResponse> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (ethAddress) headers['x-eth-address'] = ethAddress
@@ -152,7 +153,7 @@ export async function sendChat(
   const res = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ messages, walletAddress }),
+    body: JSON.stringify({ messages, walletAddress, autoSignActive: Boolean(autoSignActive) }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText })) as { error?: string; message?: string }
@@ -173,6 +174,7 @@ export async function continueChatAfterTool(
   walletAddress?:  string,
   ethAddress?:     string,
   authToken?:      string,
+  autoSignActive?: boolean,
 ): Promise<ChatResponse> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (ethAddress) headers['x-eth-address'] = ethAddress
@@ -181,7 +183,14 @@ export async function continueChatAfterTool(
   const res = await fetch(`${BASE}/api/chat/continue`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ pendingMessages, toolId, toolResult, toolError, walletAddress }),
+    body: JSON.stringify({
+      pendingMessages,
+      toolId,
+      toolResult,
+      toolError,
+      walletAddress,
+      autoSignActive: Boolean(autoSignActive),
+    }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText })) as { error?: string; message?: string }

@@ -26,7 +26,7 @@ You can:
 - Query real-time market data: prices, funding rates, market parameters, and optional orderbook depth
 - Look up wallet balances and open positions with P&L
 - Resolve any Injective token denom to human-readable metadata
-- Execute perpetual futures trades (long/short) through Injective RFQ quote-based settlement via MetaMask
+- Execute perpetual futures trades (long/short) through Injective RFQ gateway settlement
 - Bridge USDC from Arbitrum, Base, Optimism, Ethereum, Polygon, or Avalanche to native USDC on Injective via Circle CCTP V2
 - Set up trading authorization for RFQ trading without per-trade MetaMask popups
 - Check native USDC and legacy WUSDT balances for x402 payments on Injective EVM
@@ -39,9 +39,11 @@ CRITICAL - TRADING AUTHORIZATION RULES (when trading authorization is active):
 - When the user says "long 1 INJ 1x", immediately call get_market_data then trade_open in the SAME response. Do NOT send a text-only message first.
 - When the user says "close all positions", immediately fetch positions and start closing them ONE AT A TIME. No confirmation text.
 - This applies to ALL actions: opens, closes, bridges. Just execute.
+- After trading authorization is active, NEVER say the trade needs a MetaMask signature. Trades use the local RFQ grantee key and gateway fee-payer flow.
 
 When trading authorization is NOT active:
 - Summarize the trade and ask "confirm?" before calling trade_open/trade_close.
+- If the user confirms a trade or asks to enable trading, call enable_autosign. When enable_autosign succeeds, execute the pending trade without asking again.
 
 General guidelines:
 - Always fetch real data using tools before answering questions about prices, balances, or positions
@@ -55,6 +57,13 @@ General guidelines:
 - Keep responses concise and data-forward
 - Close multiple positions ONE AT A TIME (one trade_close per turn)
 - x402 operates on Injective EVM (chain ID 1776), separate from the Injective Cosmos chain used for trading. Native USDC supports x402 payments directly. The wallet switches chains automatically.`
+
+function buildSystemPrompt(walletAddress?: string, autoSignActive = false): string {
+  const context: string[] = []
+  if (walletAddress) context.push(`Connected wallet: ${walletAddress}`)
+  context.push(`Trading authorization: ${autoSignActive ? 'active' : 'inactive'}`)
+  return `${SYSTEM_PROMPT}\n\n${context.join('\n')}`
+}
 
 // Public API type (JSON-serialisable for request/response bodies)
 export interface ConversationMessage {
@@ -78,10 +87,9 @@ export interface ChatResponse {
 export async function processChat(
   messages:      ConversationMessage[],
   walletAddress?: string,
+  autoSignActive = false,
 ): Promise<ChatResponse> {
-  const systemPrompt = walletAddress
-    ? `${SYSTEM_PROMPT}\n\nConnected wallet: ${walletAddress}`
-    : SYSTEM_PROMPT
+  const systemPrompt = buildSystemPrompt(walletAddress, autoSignActive)
 
   // Use Anthropic's native MessageParam type internally. ConversationMessage is
   // only used at the public API boundary (plain text content for JSON serialisation).
@@ -222,6 +230,7 @@ export async function continueAfterBrowserTool(
   toolResult:        unknown,
   toolError?:        string,
   walletAddress?:    string,
+  autoSignActive = false,
 ): Promise<ChatResponse> {
   const browserResult: Anthropic.ToolResultBlockParam = {
     type:        'tool_result',
@@ -262,5 +271,6 @@ export async function continueAfterBrowserTool(
   return processChat(
     messagesWithResult as ConversationMessage[],
     walletAddress,
+    autoSignActive,
   )
 }

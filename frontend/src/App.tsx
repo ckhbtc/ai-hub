@@ -125,7 +125,9 @@ export default function App() {
         setWallet(null)
         setAuthToken(null)
         setAutoSign(false)
+        return
       }
+      setAutoSign(isAutoSignActive(injAddr))
     })
   }, [])
 
@@ -138,6 +140,7 @@ export default function App() {
       const session = await createAuthSession(info.ethAddress, challenge.message, signature)
       setWallet(info)
       setAuthToken(session.token)
+      setAutoSign(isAutoSignActive(info.injAddress))
     } catch (e) { setError((e as Error).message) }
   }
 
@@ -155,7 +158,7 @@ export default function App() {
   }
 
   function handleDisableAutoSign() {
-    disableAutoSign()
+    disableAutoSign(wallet?.injAddress)
     setAutoSign(false)
   }
 
@@ -193,6 +196,7 @@ export default function App() {
             res.browserTool.id,
             result, toolError,
             wallet?.injAddress, wallet?.ethAddress, authToken ?? undefined,
+            wallet ? isAutoSignActive(wallet.injAddress) : autoSign,
           )
           await handleChatResponse(cont)
         } catch (e) { setError((e as Error).message) }
@@ -219,7 +223,13 @@ export default function App() {
     setLoading(true)
     const t0 = performance.now()
     try {
-      const res = await sendChat(conversationRef.current, wallet?.injAddress, wallet?.ethAddress, authToken ?? undefined)
+      const res = await sendChat(
+        conversationRef.current,
+        wallet?.injAddress,
+        wallet?.ethAddress,
+        authToken ?? undefined,
+        wallet ? isAutoSignActive(wallet.injAddress) : autoSign,
+      )
       setLatency(Math.round(performance.now() - t0))
       await handleChatResponse(res)
     } catch (e) { setError((e as Error).message) }
@@ -248,6 +258,7 @@ export default function App() {
             slippage:     (toolInput.slippage as number | undefined) ?? 0.01,
             onProgress:   setToolStatus,
           })
+          setAutoSign(isAutoSignActive(wallet.injAddress))
           break
         }
         case 'trade_close': {
@@ -262,6 +273,7 @@ export default function App() {
             slippage: (toolInput.slippage as number | undefined) ?? 0.05,
             onProgress: setToolStatus,
           })
+          setAutoSign(isAutoSignActive(wallet.injAddress))
           break
         }
         case 'bridge_execute': {
@@ -276,13 +288,13 @@ export default function App() {
         case 'enable_autosign': {
           if (!wallet) throw new Error('Wallet not connected')
           await enableAutoSign(wallet.injAddress, wallet.ethAddress, setToolStatus)
-          setAutoSign(true)
+          setAutoSign(isAutoSignActive(wallet.injAddress))
           result = { success: true, message: 'Trading authorization enabled' }
           break
         }
         case 'disable_autosign': {
-          disableAutoSign()
-          setAutoSign(isAutoSignActive())
+          disableAutoSign(wallet?.injAddress)
+          setAutoSign(false)
           result = { success: true, message: 'Trading authorization disabled' }
           break
         }
@@ -344,6 +356,7 @@ export default function App() {
       const res = await continueChatAfterTool(
         pendingMessages, browserTool.id, result, toolError,
         wallet?.injAddress, wallet?.ethAddress, authToken ?? undefined,
+        wallet ? isAutoSignActive(wallet.injAddress) : autoSign,
       )
       await handleChatResponse(res)
     } catch (e) { setError((e as Error).message) }
@@ -360,6 +373,7 @@ export default function App() {
       const res = await continueChatAfterTool(
         pendingMessages, browserTool.id, undefined, 'User cancelled the action',
         wallet?.injAddress, wallet?.ethAddress, authToken ?? undefined,
+        wallet ? isAutoSignActive(wallet.injAddress) : autoSign,
       )
       await handleChatResponse(res)
     } catch (e) { setError((e as Error).message) }
