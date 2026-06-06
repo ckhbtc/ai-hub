@@ -6,6 +6,7 @@
 
 import type Anthropic from '@anthropic-ai/sdk'
 import * as inj from './injective'
+import * as rfq from './rfqQuotes'
 import * as x402 from './x402'
 import { initAccount } from './faucet'
 
@@ -30,12 +31,27 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'get_orderbook',
-    description: 'Get the top bid/ask price levels from the Injective on-chain orderbook for a perpetual market.',
+    description: 'Get the top bid/ask price levels from the Injective exchange orderbook for a perpetual market.',
     input_schema: {
       type: 'object',
       properties: {
         symbol: { type: 'string', description: 'Market symbol' },
         levels: { type: 'number', description: 'Number of price levels per side (default 10, max 20)' },
+      },
+      required: ['symbol'],
+    },
+  },
+  {
+    name: 'get_rfq_quotes',
+    description: 'Probe live RFQ maker quotes for a perpetual market and return the best bid and ask responses for a specific notional size.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        symbol: { type: 'string', description: 'Market symbol, e.g. BTC, ETH, INJ, SOL' },
+        notional_usdc: { type: 'number', description: 'Probe notional size in USDC. Defaults to 100.' },
+        levels: { type: 'number', description: 'Number of maker quote responses per side to return. Defaults to 3, max 10.' },
+        request_address: { type: 'string', description: 'Optional connected Injective address to use as the RFQ probe taker address.' },
+        slippage: { type: 'number', description: 'Worst-price guardrail as fraction. Defaults to 0.05 = 5%.' },
       },
       required: ['symbol'],
     },
@@ -104,7 +120,7 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'trade_open',
     description:
-      'Open a perpetual futures position on Injective through RFQ quote-based execution. Requires MetaMask signing in the browser. ' +
+      'Open a perpetual futures position on Injective through RFQ quote-based execution. Uses the RFQ gateway autosign path after trading authorization is enabled. ' +
       'IMPORTANT: margin_usdc is the user stake/margin. If the user says "$5 of BTC with 50x", set margin_usdc=5 and leverage=50; the app derives $250 notional. ' +
       'When the user says "long 1 INJ" or "short 0.5 BTC", they mean base quantity; fetch oracle price and compute margin_usdc = quantity × price / leverage. ' +
       'Only divide dollars by leverage when the user explicitly says "notional". ' +
@@ -124,7 +140,7 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'trade_close',
     description:
-      'Close an open perpetual futures position on Injective through RFQ quote-based execution. Requires MetaMask signing. ' +
+      'Close an open perpetual futures position on Injective through RFQ quote-based execution. Uses the RFQ gateway autosign path after trading authorization is enabled. ' +
       'Always confirm with user before calling.',
     input_schema: {
       type: 'object',
@@ -158,7 +174,7 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'enable_autosign',
     description:
-      'Enable trading authorization: grants RFQ contract settlement permissions and grants an ephemeral key permission to accept RFQ quotes for 72 hours. ' +
+      'Enable trading authorization: grants RFQ contract settlement permissions and grants an ephemeral key permission to accept RFQ quotes until the long-lived AuthZ expiry. ' +
       'Requires MetaMask signing to set up the on-chain AuthZ grants. After this, RFQ trades execute without wallet popups.',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
@@ -273,6 +289,14 @@ export async function executeServerTool(
 
     case 'get_orderbook':
       return inj.getOrderbook(input.symbol as string, (input.levels as number | undefined) ?? 10)
+
+    case 'get_rfq_quotes':
+      return rfq.getRfqQuotes(input.symbol as string, {
+        notional_usdc: input.notional_usdc as number | undefined,
+        levels: input.levels as number | undefined,
+        request_address: input.request_address as string | undefined,
+        slippage: input.slippage as number | undefined,
+      })
 
     case 'get_funding_rate':
       return inj.getFundingRate(input.symbol as string)
