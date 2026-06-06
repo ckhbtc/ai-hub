@@ -200,7 +200,7 @@ export interface OpenTradeParams {
   ethAddress: string
   market: PerpMarket
   side: 'long' | 'short'
-  notionalUsdc: number   // e.g. 100 = $100
+  marginUsdc: number     // e.g. 5 = $5 margin
   leverage: number        // e.g. 5
   slippage?: number       // default 0.01
   onProgress?: (msg: string) => void
@@ -211,7 +211,7 @@ export interface TxResult {
 }
 
 export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
-  const { injAddress, ethAddress, market, side, notionalUsdc, leverage, slippage = 0.01, onProgress } = params
+  const { injAddress, ethAddress, market, side, marginUsdc, leverage, slippage = 0.01, onProgress } = params
 
   if (!isAutoSignActive()) {
     await ensureRfqContractAuthorization(injAddress, ethAddress, onProgress)
@@ -223,7 +223,7 @@ export async function openTrade(params: OpenTradeParams): Promise<TxResult> {
     market,
     oraclePrice,
     side,
-    notionalUsdc,
+    marginUsdc,
     leverage,
     slippage,
   })

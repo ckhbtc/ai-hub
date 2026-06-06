@@ -45,7 +45,9 @@ When trading authorization is NOT active:
 
 General guidelines:
 - Always fetch real data using tools before answering questions about prices, balances, or positions
-- IMPORTANT: "long 1 INJ" means QUANTITY, not dollars. Fetch oracle price and compute notional_usdc = quantity × price. Only interpret as dollars if they say "$" or "dollars".
+- IMPORTANT: "$5 of BTC with 50x" means $5 margin/stake, not $5 notional and not 5 BTC. Use trade_open margin_usdc=5, leverage=50, and describe it as ~$250 notional.
+- IMPORTANT: "long 1 INJ" means base quantity, not dollars. Fetch oracle price and compute margin_usdc = quantity × price / leverage. Only divide a dollar amount by leverage if the user explicitly says "notional".
+- Compare leverage numerically against maxLeverage. If max leverage is 52x and requested leverage is 50x, 50x is valid and does not exceed the max.
 - Trades settle through RFQ. Do not describe them as orderbook market orders.
 - Format numbers cleanly, avoid raw markdown tables
 - For funding rates: positive = longs pay shorts, negative = shorts pay longs

@@ -47,9 +47,14 @@ function toolMarket(tool: BrowserToolPayload): string {
 function toolSize(tool: BrowserToolPayload): { val: string; sub: string } | null {
   const { name, input } = tool
   if (name === 'trade_open') {
+    const margin = Number(input.margin_usdc)
+    const leverage = Number(input.leverage ?? 1)
+    const notional = Number.isFinite(margin) && Number.isFinite(leverage)
+      ? margin * leverage
+      : null
     return {
-      val: `${input.notional_usdc} USDC`,
-      sub: `${input.leverage ?? 1}× ${input.symbol ?? ''}`,
+      val: `${input.margin_usdc} USDC margin`,
+      sub: `${input.leverage ?? 1}x ${input.symbol ?? ''}${notional ? ` · ${notional.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC notional` : ''}`,
     }
   }
   if (name === 'trade_close') {
@@ -82,7 +87,7 @@ function DestructiveToolCard({
   const size   = toolSize(browserTool)
 
   const rows = Object.entries(browserTool.input)
-    .filter(([k]) => !['symbol', 'side', 'notional_usdc', 'amount', 'quantity', 'token', 'url'].includes(k))
+    .filter(([k]) => !['symbol', 'side', 'margin_usdc', 'amount', 'quantity', 'token', 'url'].includes(k))
 
   return (
     <div className="tool-dest">

@@ -112,24 +112,25 @@ export function buildRfqOpenInput({
   market,
   oraclePrice,
   side,
-  notionalUsdc,
+  marginUsdc,
   leverage,
   slippage,
 }: {
   market: PerpMarket
   oraclePrice: Decimal.Value
   side: 'long' | 'short'
-  notionalUsdc: Decimal.Value
+  marginUsdc: Decimal.Value
   leverage: Decimal.Value
   slippage: Decimal.Value
 }): RfqOrderInput {
   const price = new Decimal(oraclePrice)
-  const notional = new Decimal(notionalUsdc)
+  const margin = new Decimal(marginUsdc)
   const leverageDec = new Decimal(leverage)
   if (!price.isFinite() || price.lte(0)) throw new Error('Oracle price is unavailable')
-  if (!notional.isFinite() || notional.lte(0)) throw new Error('Notional must be positive')
+  if (!margin.isFinite() || margin.lte(0)) throw new Error('Margin must be positive')
   if (!leverageDec.isFinite() || leverageDec.lte(0)) throw new Error('Leverage must be positive')
 
+  const notional = margin.mul(leverageDec)
   const slippageDec = new Decimal(slippage)
   const direction = side
   const priceTick = humanPriceTick(market.minPriceTickSize)
@@ -140,7 +141,7 @@ export function buildRfqOpenInput({
 
   return {
     direction,
-    margin: canonicalDecimal(notional.div(leverageDec)),
+    margin: canonicalDecimal(margin),
     quantity: quantizeDecimal(notional.div(price), quantityTick, Decimal.ROUND_FLOOR),
     worstPrice: quantizeDecimal(
       worstRaw,

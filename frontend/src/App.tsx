@@ -243,7 +243,7 @@ export default function App() {
             ethAddress:  wallet.ethAddress,
             market,
             side:         toolInput.side as 'long' | 'short',
-            notionalUsdc: toolInput.notional_usdc as number,
+            marginUsdc:   toolInput.margin_usdc as number,
             leverage:     toolInput.leverage as number,
             slippage:     (toolInput.slippage as number | undefined) ?? 0.01,
             onProgress:   setToolStatus,

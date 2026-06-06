@@ -72,12 +72,6 @@ export function Sidebar({
               title={autoSign ? 'Disable trading' : 'Enable trading'}
             />
           </div>
-          <div className={`mode-row ${autoSign ? '' : 'dim'}`}>
-            <div className="mode-row-text">
-              <div className="mode-title">Trading enabled</div>
-              <div className="mode-desc">RFQ AuthZ session active</div>
-            </div>
-          </div>
           {modeStatus && <div className="side-status">{modeStatus}</div>}
         </div>
       )}

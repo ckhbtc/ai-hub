@@ -116,7 +116,7 @@ export function validateBrowserToolPayload(tool: BrowserToolPayload): BrowserToo
         input: {
           symbol: symbol(input, tool.name),
           side: side(input, tool.name),
-          notional_usdc: positiveNumber(input, 'notional_usdc', tool.name),
+          margin_usdc: positiveNumber(input, 'margin_usdc', tool.name),
           leverage: leverage(input, tool.name),
           slippage: slippage(input, 0.01, tool.name),
         },

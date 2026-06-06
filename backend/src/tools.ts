@@ -100,20 +100,20 @@ export const TOOLS: Anthropic.Tool[] = [
     name: 'trade_open',
     description:
       'Open a perpetual futures position on Injective through RFQ quote-based execution. Requires MetaMask signing in the browser. ' +
-      'IMPORTANT: When the user says "long 1 INJ" or "short 0.5 BTC", they mean QUANTITY - ' +
-      'multiply by the current oracle price to get notional_usdc. Use get_market_data first if needed. ' +
-      'When the user says "$100 of INJ" or "100 dollars", that IS the notional_usdc directly. ' +
-      'Always confirm: "Open RFQ [side] [quantity] [symbol] (~$[notional]) at [leverage]x - confirm?"',
+      'IMPORTANT: margin_usdc is the user stake/margin. If the user says "$5 of BTC with 50x", set margin_usdc=5 and leverage=50; the app derives $250 notional. ' +
+      'When the user says "long 1 INJ" or "short 0.5 BTC", they mean base quantity; fetch oracle price and compute margin_usdc = quantity × price / leverage. ' +
+      'Only divide dollars by leverage when the user explicitly says "notional". ' +
+      'Always confirm: "Open RFQ [side] $[margin] margin in [symbol] at [leverage]x (~$[margin×leverage] notional) - confirm?"',
     input_schema: {
       type: 'object',
       properties: {
-        symbol:       { type: 'string', description: 'Market symbol, e.g. BTC, ETH, INJ' },
-        side:         { type: 'string', enum: ['long', 'short'], description: 'Position direction' },
-        notional_usdc:{ type: 'number', description: 'USDC notional amount. If user specifies quantity (e.g. "1 INJ"), multiply quantity × oracle price to get this value.' },
-        leverage:     { type: 'number', description: 'Leverage multiplier, e.g. 5 for 5x' },
-        slippage:     { type: 'number', description: 'Slippage tolerance as fraction (default 0.01 = 1%)' },
+        symbol:      { type: 'string', description: 'Market symbol, e.g. BTC, ETH, INJ' },
+        side:        { type: 'string', enum: ['long', 'short'], description: 'Position direction' },
+        margin_usdc: { type: 'number', description: 'USDC margin/stake amount. Notional is margin_usdc × leverage.' },
+        leverage:    { type: 'number', description: 'Leverage multiplier, e.g. 50 for 50x' },
+        slippage:    { type: 'number', description: 'Slippage tolerance as fraction (default 0.01 = 1%)' },
       },
-      required: ['symbol', 'side', 'notional_usdc', 'leverage'],
+      required: ['symbol', 'side', 'margin_usdc', 'leverage'],
     },
   },
   {
