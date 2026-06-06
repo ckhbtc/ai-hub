@@ -33,6 +33,10 @@ interface RequestRfqQuotesParams extends RfqOrderInput {
   marketId: string
   collectMs?: number
   requestTimeoutMs?: number
+  priceCheck?: boolean
+  onlyMakers?: string[]
+  excludeMakers?: string[]
+  minTtlMs?: number
   socketFactory?: (args: RfqTakerSocketArgs) => RfqTakerSocketLike
 }
 
@@ -64,6 +68,13 @@ export interface RfqQuoteResult {
   status: string | null
   rawQuoteCount: number
   rejectionReasons: string[]
+  quoteDiagnostics: Array<{
+    maker: string
+    price: string
+    quantity: string
+    ttlMs: number | null
+    rejectionReason: string | null
+  }>
   quotes: RfqQuote[]
 }
 
@@ -420,13 +431,17 @@ function isQuoteWithinWorstPrice(quote: RfqQuote, direction: 'long' | 'short', w
 
 function getRfqQuoteRejectReason(
   quote: RfqQuote,
-  { rfqId, marketId, direction, worstPrice }: {
+  request: {
     rfqId: number | null
     marketId: string
     direction: 'long' | 'short'
     worstPrice: string
+    onlyMakers?: string[]
+    excludeMakers?: string[]
+    minTtlMs?: number
   },
 ): string | null {
+  const { rfqId, marketId, direction, worstPrice } = request
   if (!quote.signature) return 'signature missing'
   if (!quote.maker) return 'maker missing'
   if (quote.chainId !== RFQ_CHAIN_ID) return `chain ${quote.chainId || '<empty>'} != ${RFQ_CHAIN_ID}`
@@ -442,8 +457,15 @@ function getRfqQuoteRejectReason(
     return `price ${quote.price} outside worst ${worstPrice} for ${direction}`
   }
 
-  const expiresAtMs = Number(quote.expiry?.timestamp || 0)
-  if (expiresAtMs > 0 && expiresAtMs <= Date.now() + 250) {
+  const onlyMakers = new Set(request.onlyMakers || [])
+  const excludeMakers = new Set(request.excludeMakers || [])
+  if (onlyMakers.size > 0 && !onlyMakers.has(quote.maker)) return `maker ${quote.maker} not in allowlist`
+  if (excludeMakers.has(quote.maker)) return `maker ${quote.maker} excluded`
+
+  const minTtlMs = Number.isFinite(Number(request.minTtlMs)) ? Number(request.minTtlMs) : 250
+  const rawExpiry = Number(quote.expiry?.timestamp || 0)
+  const expiresAtMs = rawExpiry > 0 && rawExpiry < 10_000_000_000 ? rawExpiry * 1000 : rawExpiry
+  if (expiresAtMs > 0 && expiresAtMs <= Date.now() + minTtlMs) {
     return `expiry ${expiresAtMs} too close`
   }
 
@@ -452,7 +474,15 @@ function getRfqQuoteRejectReason(
 
 function selectRfqQuotesForAccept(
   quotes: RfqQuote[],
-  request: { rfqId: number | null; marketId: string; direction: 'long' | 'short'; worstPrice: string },
+  request: {
+    rfqId: number | null
+    marketId: string
+    direction: 'long' | 'short'
+    worstPrice: string
+    onlyMakers?: string[]
+    excludeMakers?: string[]
+    minTtlMs?: number
+  },
 ): RfqQuote[] {
   return quotes
     .filter(quote => !getRfqQuoteRejectReason(quote, request))
@@ -470,6 +500,9 @@ function buildRfqQuoteResult({
   marketId,
   direction,
   worstPrice,
+  onlyMakers,
+  excludeMakers,
+  minTtlMs,
 }: {
   clientId: string
   ack: { rfqId: number; status?: string } | null
@@ -477,6 +510,9 @@ function buildRfqQuoteResult({
   marketId: string
   direction: 'long' | 'short'
   worstPrice: string
+  onlyMakers?: string[]
+  excludeMakers?: string[]
+  minTtlMs?: number
 }): RfqQuoteResult {
   const candidateRfqIds = [
     Number(ack?.rfqId || 0) > 0 ? Number(ack?.rfqId) : null,
@@ -489,7 +525,7 @@ function buildRfqQuoteResult({
   for (const candidateRfqId of candidateRfqIds) {
     const candidateQuotes = selectRfqQuotesForAccept(
       quotes,
-      { rfqId: candidateRfqId, marketId, direction, worstPrice },
+      { rfqId: candidateRfqId, marketId, direction, worstPrice, onlyMakers, excludeMakers, minTtlMs },
     )
     if (candidateQuotes.length > 0 || !selectedQuotes.length) {
       rfqId = candidateRfqId
@@ -498,9 +534,28 @@ function buildRfqQuoteResult({
     if (candidateQuotes.length > 0) break
   }
 
-  const rejectionReasons = quotes
+  const quoteDiagnostics = quotes.map(quote => {
+    const rawExpiry = Number(quote.expiry?.timestamp || 0)
+    const expiryMs = rawExpiry > 0 && rawExpiry < 10_000_000_000 ? rawExpiry * 1000 : rawExpiry
+    return {
+      maker: quote.maker,
+      price: quote.price,
+      quantity: quote.quantity,
+      ttlMs: expiryMs > 0 ? expiryMs - Date.now() : null,
+      rejectionReason: getRfqQuoteRejectReason(quote, {
+        rfqId,
+        marketId,
+        direction,
+        worstPrice,
+        onlyMakers,
+        excludeMakers,
+        minTtlMs,
+      }),
+    }
+  })
+  const rejectionReasons = quoteDiagnostics
     .slice(0, 3)
-    .map(quote => getRfqQuoteRejectReason(quote, { rfqId, marketId, direction, worstPrice }))
+    .map(quote => quote.rejectionReason)
     .filter((reason): reason is string => Boolean(reason))
 
   return {
@@ -510,6 +565,7 @@ function buildRfqQuoteResult({
     status: ack?.status ?? null,
     rawQuoteCount: quotes.length,
     rejectionReasons,
+    quoteDiagnostics,
     quotes: selectedQuotes,
   }
 }
@@ -523,6 +579,10 @@ export async function requestRfqQuotes({
   worstPrice,
   collectMs = RFQ_COLLECT_QUOTES_MS,
   requestTimeoutMs = RFQ_REQUEST_TIMEOUT_MS,
+  priceCheck = true,
+  onlyMakers,
+  excludeMakers,
+  minTtlMs = 250,
   socketFactory = args => new RfqTakerSocket(args),
 }: RequestRfqQuotesParams): Promise<RfqQuoteResult> {
   const clientId = randomId()
@@ -548,6 +608,9 @@ export async function requestRfqQuotes({
       marketId,
       direction,
       worstPrice,
+      onlyMakers,
+      excludeMakers,
+      minTtlMs,
     }))
   }
 
@@ -628,7 +691,7 @@ export async function requestRfqQuotes({
         quantity,
         worstPrice,
         expiry: 0,
-        priceCheck: true,
+        priceCheck,
       })
     })
   } finally {
