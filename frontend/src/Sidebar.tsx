@@ -21,7 +21,7 @@ export function Sidebar({
     'funding rates',
     'my balances',
     'close all profitable',
-    'bridge 100 USDC',
+    'bridge 100 USDC from Base',
     'enable trading',
   ]
   const shortInj = wallet

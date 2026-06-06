@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { executeBridge } from './bridge'
 import { getCredits, requestGasTopUp, submitAuthorizedUsdcDeposit, submitDeposit } from './api'
+import { BridgeModal } from './BridgeModal'
 import type { WalletInfo } from './wallet'
 import {
   buildBalanceOfData,
@@ -297,24 +297,6 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
     await sendCreditDeposit(migrateAmount, legacyDepositTokenAddress, 'USDT')
   }
 
-  async function handleBridge() {
-    setBusy(true); setErr(null)
-    try {
-      const amount = parseFloat(bridgeAmount)
-      if (!amount || amount <= 0) throw new Error('Invalid amount')
-      await executeBridge(bridgeAmount, wallet.ethAddress, wallet.ethAddress, setStatus)
-      setStatus('Bridge complete, native USDC arrived')
-      setShowBridge(false)
-      await fetchCredits()
-      setTimeout(() => setStatus(''), 10000)
-    } catch (e) {
-      setErr((e as Error).message)
-      setStatus('')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <div className="section">
       <div className="section-label">Credits</div>
@@ -347,7 +329,7 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
         >Deposit</button>
         <button
           className="btn btn-ghost"
-          onClick={() => { setShowBridge(s => !s); setShowDeposit(false); setShowMigrate(false) }}
+          onClick={() => { setShowBridge(true); setShowDeposit(false); setShowMigrate(false); setErr(null); setStatus('') }}
           disabled={busy}
         >Bridge</button>
         {hasLegacyUsdt && (
@@ -382,21 +364,18 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
         </div>
       )}
       {showBridge && (
-        <div className="amount-row">
-          <input
-            type="number"
-            className="amount-input"
-            value={bridgeAmount}
-            onChange={e => setBridgeAmount(e.target.value)}
-            min="1"
-            step="1"
-            disabled={busy}
-            placeholder="USDC"
-          />
-          <button className="btn btn-primary" onClick={handleBridge} disabled={busy}>
-            {busy ? '...' : 'Send'}
-          </button>
-        </div>
+        <BridgeModal
+          wallet={wallet}
+          defaultAmount={bridgeAmount}
+          onAmountChange={setBridgeAmount}
+          onClose={() => setShowBridge(false)}
+          onComplete={async () => {
+            setStatus('Bridge complete, native USDC arrived')
+            setShowBridge(false)
+            await fetchCredits()
+            setTimeout(() => setStatus(''), 10000)
+          }}
+        />
       )}
       {showMigrate && (
         <div className="amount-row">

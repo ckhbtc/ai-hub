@@ -86,11 +86,16 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'get_bridge_quote',
-    description: 'Get a quote for bridging USDC from Arbitrum to native USDC on Injective via Circle CCTP V2. Shows received amount and fees. Read-only.',
+    description: 'Get a quote for bridging USDC from a source EVM network to native USDC on Injective via Circle CCTP V2. Shows received amount and fees. Read-only.',
     input_schema: {
       type: 'object',
       properties: {
         amount: { type: 'string', description: 'Amount of USDC to bridge (e.g. "50")' },
+        source_chain: {
+          type: 'string',
+          enum: ['arbitrum', 'base', 'optimism', 'ethereum', 'polygon', 'avalanche'],
+          description: 'Source network for the USDC bridge. Defaults to arbitrum if omitted.',
+        },
       },
       required: ['amount'],
     },
@@ -135,12 +140,17 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'bridge_execute',
     description:
-      'Execute a bridge from Arbitrum USDC to native USDC on Injective via Circle CCTP V2. ' +
-      'Requires MetaMask to sign on Arbitrum and uses the server relayer for the Injective mint. Always get a quote first and confirm with user.',
+      'Execute a bridge from source-chain USDC to native USDC on Injective via Circle CCTP V2. ' +
+      'Requires MetaMask to sign on the selected source network and uses the server relayer for the Injective mint. Always get a quote first and confirm with user.',
     input_schema: {
       type: 'object',
       properties: {
         amount: { type: 'string', description: 'Amount of USDC to bridge' },
+        source_chain: {
+          type: 'string',
+          enum: ['arbitrum', 'base', 'optimism', 'ethereum', 'polygon', 'avalanche'],
+          description: 'Source network for the USDC bridge. Defaults to arbitrum if omitted.',
+        },
       },
       required: ['amount'],
     },
@@ -277,7 +287,7 @@ export async function executeServerTool(
       return inj.getTokenInfo(input.denom as string)
 
     case 'get_bridge_quote':
-      return inj.getBridgeQuote(input.amount as string)
+      return inj.getBridgeQuote(input.amount as string, input.source_chain as string | undefined)
 
     case 'x402_check_wrapped_balance':
       return x402.getWrappedBalance(input.address as string, (input.token as string) ?? 'USDC')

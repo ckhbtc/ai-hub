@@ -448,6 +448,7 @@ export function getTokenInfo(denom: string): TokenInfo {
 // ─── Bridge quote (read-only, via Circle CCTP V2) ────────────────────────────
 
 export interface BridgeQuote {
+  sourceChain: string
   srcToken:   string
   srcAmount:  string
   dstToken:   string
@@ -457,17 +458,48 @@ export interface BridgeQuote {
   route:      string
 }
 
-export async function getBridgeQuote(amount: string): Promise<BridgeQuote> {
+const BRIDGE_SOURCE_CHAINS: Record<string, string> = {
+  arbitrum: 'Arbitrum',
+  base: 'Base',
+  optimism: 'Optimism',
+  ethereum: 'Ethereum',
+  polygon: 'Polygon',
+  avalanche: 'Avalanche',
+}
+
+function normalizeBridgeSource(source?: string): string {
+  const normalized = (source || 'arbitrum').trim().toLowerCase().replace(/[\s_]+/g, '-')
+  const aliases: Record<string, string> = {
+    arb: 'arbitrum',
+    'arbitrum-one': 'arbitrum',
+    eth: 'ethereum',
+    mainnet: 'ethereum',
+    op: 'optimism',
+    'op-mainnet': 'optimism',
+    matic: 'polygon',
+    poly: 'polygon',
+    avax: 'avalanche',
+    'avalanche-c-chain': 'avalanche',
+  }
+  const key = aliases[normalized] ?? normalized
+  if (!BRIDGE_SOURCE_CHAINS[key]) throw new Error('Unsupported bridge source network')
+  return key
+}
+
+export async function getBridgeQuote(amount: string, sourceChain?: string): Promise<BridgeQuote> {
   const parsed = Number(amount)
   if (!Number.isFinite(parsed) || parsed <= 0) throw new Error('Invalid bridge amount')
+  const source = normalizeBridgeSource(sourceChain)
+  const sourceLabel = BRIDGE_SOURCE_CHAINS[source]
 
   return {
-    srcToken:    'USDC (Arbitrum)',
+    sourceChain: source,
+    srcToken:    `USDC (${sourceLabel})`,
     srcAmount:   amount,
     dstToken:    'USDC (Injective native)',
     dstAmount:   parsed.toFixed(6).replace(/\.?0+$/, ''),
     protocolFee: '0',
     fixFeeEth:   '0',
-    route:       'Circle CCTP V2 standard burn-and-mint',
+    route:       `Circle CCTP V2 standard burn-and-mint, ${sourceLabel} to Injective`,
   }
 }

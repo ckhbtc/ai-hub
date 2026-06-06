@@ -390,6 +390,192 @@ html, body, #root {
 }
 .amount-input:focus { border-color: var(--ink-mid); }
 
+/* Bridge modal */
+.bridge-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(20, 19, 16, 0.24);
+}
+
+[data-theme="dark"] .bridge-modal-backdrop {
+  background: rgba(0, 0, 0, 0.56);
+}
+
+.bridge-modal {
+  width: min(520px, 100%);
+  max-height: min(720px, calc(100vh - 40px));
+  overflow: auto;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.bridge-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bridge-modal-head h2 {
+  font-size: 20px;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.bridge-modal-close {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.bridge-field {
+  padding: 16px 20px 0;
+}
+
+.bridge-field label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.bridge-amount-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.bridge-amount-row .amount-input {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  padding: 10px 12px;
+}
+
+.bridge-amount-row span {
+  padding-right: 12px;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.bridge-network-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bridge-network-option {
+  display: flex;
+  min-height: 54px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink-mid);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  padding: 9px 10px;
+  text-align: left;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+
+.bridge-network-option span {
+  font-size: 13px;
+  font-weight: 500;
+  color: inherit;
+}
+
+.bridge-network-option small {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.bridge-network-option:hover:not(:disabled),
+.bridge-network-option.active {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: var(--bg-sidebar);
+}
+
+.bridge-route {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 20px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.bridge-route > div:not(.route-arrow) {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.route-label {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bridge-route strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.route-arrow {
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.bridge-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 20px 0;
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.bridge-error {
+  margin: 16px 20px 0;
+}
+
+.bridge-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 18px 20px 20px;
+}
+
 /* ─── Main ─────────────────────────────────────────────────────────────────── */
 
 .main {

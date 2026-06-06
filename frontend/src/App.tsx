@@ -269,6 +269,7 @@ export default function App() {
           result = await executeBridge(
             toolInput.amount as string,
             wallet.ethAddress, wallet.ethAddress, setToolStatus,
+            toolInput.source_chain as string | undefined,
           )
           break
         }

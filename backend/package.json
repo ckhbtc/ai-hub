@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "test": "node --import tsx --test src/credits.test.ts src/sessions.test.ts src/x402-middleware.test.ts ../frontend/test/creditsTx.test.ts ../frontend/test/rfq.test.ts ../frontend/test/rfqAuthz.test.ts",
+    "test": "node --import tsx --test src/credits.test.ts src/sessions.test.ts src/x402-middleware.test.ts ../frontend/test/creditsTx.test.ts ../frontend/test/bridge.test.ts ../frontend/test/rfq.test.ts ../frontend/test/rfqAuthz.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

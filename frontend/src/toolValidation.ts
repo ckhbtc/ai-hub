@@ -4,6 +4,20 @@ const ETH_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
 const HEX_DATA_RE = /^0x[0-9a-fA-F]*$/
 const DECIMAL_AMOUNT_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/
 const SYMBOL_RE = /^[A-Za-z0-9._-]{1,24}$/
+const BRIDGE_SOURCE_ALIASES: Record<string, string> = {
+  arb: 'arbitrum',
+  'arbitrum-one': 'arbitrum',
+  eth: 'ethereum',
+  mainnet: 'ethereum',
+  op: 'optimism',
+  'op-mainnet': 'optimism',
+  optimism: 'optimism',
+  matic: 'polygon',
+  poly: 'polygon',
+  avax: 'avalanche',
+  'avalanche-c-chain': 'avalanche',
+}
+const BRIDGE_SOURCES = ['arbitrum', 'base', 'optimism', 'ethereum', 'polygon', 'avalanche']
 
 type ToolInput = Record<string, unknown>
 
@@ -48,6 +62,16 @@ function amountString(input: ToolInput, key: string, toolName: string): string {
     fail(toolName, `${key} must be a positive decimal amount with up to 6 decimals`)
   }
   return value
+}
+
+function bridgeSource(input: ToolInput, toolName: string): string {
+  const raw = optionalStringField(input, 'source_chain') ?? 'arbitrum'
+  const normalized = raw.toLowerCase().replace(/[\s_]+/g, '-')
+  const source = BRIDGE_SOURCE_ALIASES[normalized] ?? normalized
+  if (!BRIDGE_SOURCES.includes(source)) {
+    fail(toolName, `source_chain must be one of ${BRIDGE_SOURCES.join(', ')}`)
+  }
+  return source
 }
 
 function symbol(input: ToolInput, toolName: string): string {
@@ -134,7 +158,13 @@ export function validateBrowserToolPayload(tool: BrowserToolPayload): BrowserToo
       }
 
     case 'bridge_execute':
-      return { ...tool, input: { amount: amountString(input, 'amount', tool.name) } }
+      return {
+        ...tool,
+        input: {
+          amount: amountString(input, 'amount', tool.name),
+          source_chain: bridgeSource(input, tool.name),
+        },
+      }
 
     case 'enable_autosign':
     case 'disable_autosign':

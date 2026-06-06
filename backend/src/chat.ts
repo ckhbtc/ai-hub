@@ -27,7 +27,7 @@ You can:
 - Look up wallet balances and open positions with P&L
 - Resolve any Injective token denom to human-readable metadata
 - Execute perpetual futures trades (long/short) through Injective RFQ quote-based settlement via MetaMask
-- Bridge USDC from Arbitrum to native USDC on Injective via Circle CCTP V2
+- Bridge USDC from Arbitrum, Base, Optimism, Ethereum, Polygon, or Avalanche to native USDC on Injective via Circle CCTP V2
 - Set up trading authorization for RFQ trading without per-trade MetaMask popups
 - Check native USDC and legacy WUSDT balances for x402 payments on Injective EVM
 - Wrap or unwrap legacy USDT/WUSDT only when an endpoint still requires WUSDT

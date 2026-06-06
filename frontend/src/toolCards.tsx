@@ -31,12 +31,25 @@ function toolVerb(tool: BrowserToolPayload): string {
   return name.toUpperCase()
 }
 
+function bridgeSourceLabel(input: Record<string, unknown>): string {
+  const source = String(input.source_chain ?? 'arbitrum').toLowerCase()
+  const labels: Record<string, string> = {
+    arbitrum: 'Arbitrum',
+    base: 'Base',
+    optimism: 'Optimism',
+    ethereum: 'Ethereum',
+    polygon: 'Polygon',
+    avalanche: 'Avalanche',
+  }
+  return labels[source] ?? source
+}
+
 function toolMarket(tool: BrowserToolPayload): string {
   const { name, input } = tool
   if (name === 'trade_open' || name === 'trade_close') {
     return String(input.symbol ?? '').toUpperCase()
   }
-  if (name === 'bridge_execute') return 'USDC → USDC'
+  if (name === 'bridge_execute') return 'USDC -> USDC'
   if (name === 'x402_pay')       return String(input.url ?? '')
   if (name.startsWith('x402_'))  return String(input.token ?? '')
   if (name === 'enable_autosign')  return 'enable trading'
@@ -64,7 +77,7 @@ function toolSize(tool: BrowserToolPayload): { val: string; sub: string } | null
     }
   }
   if (name === 'bridge_execute') {
-    return { val: `${input.amount} USDC`, sub: 'arbitrum → injective' }
+    return { val: `${input.amount} USDC`, sub: `${bridgeSourceLabel(input)} -> injective` }
   }
   if (name === 'x402_wrap_tokens' || name === 'x402_unwrap_tokens') {
     return { val: `${input.amount}`, sub: String(input.token ?? '') }
@@ -87,7 +100,7 @@ function DestructiveToolCard({
   const size   = toolSize(browserTool)
 
   const rows = Object.entries(browserTool.input)
-    .filter(([k]) => !['symbol', 'side', 'margin_usdc', 'amount', 'quantity', 'token', 'url'].includes(k))
+    .filter(([k]) => !['symbol', 'side', 'margin_usdc', 'amount', 'quantity', 'token', 'url', 'source_chain'].includes(k))
 
   return (
     <div className="tool-dest">
