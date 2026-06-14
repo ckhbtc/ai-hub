@@ -5,13 +5,15 @@ export function Sidebar({
   wallet, autoSign,
   onConnect, onToggleMode,
   onSuggest, modeStatus,
+  balanceRefreshNonce,
 }: {
-  wallet:        WalletInfo | null
-  autoSign:      boolean
-  onConnect:    () => void
-  onToggleMode: () => void
-  onSuggest:    (text: string) => void
-  modeStatus:    string
+  wallet:              WalletInfo | null
+  autoSign:            boolean
+  onConnect:          () => void
+  onToggleMode:       () => void
+  onSuggest:          (text: string) => void
+  modeStatus:          string
+  balanceRefreshNonce: number
 }) {
   const suggestions = [
     'long 50 USDC INJ',
@@ -55,7 +57,7 @@ export function Sidebar({
         )}
       </div>
 
-      {wallet && <CreditsSection wallet={wallet} />}
+      {wallet && <CreditsSection wallet={wallet} refreshNonce={balanceRefreshNonce} />}
 
       {wallet && (
         <div className="section">

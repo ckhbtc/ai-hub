@@ -137,6 +137,28 @@ export async function requestGasTopUp(evmAddress: string): Promise<{
   return res.json()
 }
 
+export interface WalletBalance {
+  symbol: string
+  amount: string
+  denom: string
+  type: 'bank' | 'subaccount' | 'evm'
+  location: string
+  availableAmount?: string
+  totalAmount?: string
+  heldAmount?: string
+  note?: string
+}
+
+export async function getWalletBalances(injAddress: string): Promise<WalletBalance[]> {
+  const res = await fetch(`${BASE}/api/wallet-balances?address=${encodeURIComponent(injAddress)}`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+    throw new Error(err.error ?? res.statusText)
+  }
+  const data = await res.json() as { balances?: WalletBalance[] }
+  return data.balances ?? []
+}
+
 // ─── Chat API ────────────────────────────────────────────────────────────────
 
 export async function sendChat(

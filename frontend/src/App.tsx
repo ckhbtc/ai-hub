@@ -98,6 +98,7 @@ export default function App() {
   const [error,       setError]       = useState<string | null>(null)
   const [theme,       setTheme]       = useState<Theme>(initialTheme)
   const [latency,     setLatency]     = useState<number | null>(null)
+  const [balanceRefreshNonce, setBalanceRefreshNonce] = useState(0)
 
   const session = useMemo(() => shortSession(), [])
 
@@ -184,6 +185,7 @@ export default function App() {
     const submittedHash = result.txHash
     confirmation.then(confirmed => {
       appendAssistantMessage(`RFQ settlement confirmed.\n\nTX: ${confirmed.txHash || submittedHash}`)
+      setBalanceRefreshNonce(n => n + 1)
     }).catch(err => {
       const message = err instanceof Error ? err.message : String(err)
       appendAssistantMessage(`RFQ settlement failed on-chain.\n\nTX: ${submittedHash}\n\n${message}`)
@@ -432,6 +434,7 @@ export default function App() {
           onToggleMode={handleToggleMode}
           onSuggest={handleSuggest}
           modeStatus={modeStatus}
+          balanceRefreshNonce={balanceRefreshNonce}
         />
 
         <main className="main">

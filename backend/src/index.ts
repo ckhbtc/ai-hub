@@ -148,6 +148,20 @@ app.get('/api/credits', async (c) => {
   })
 })
 
+app.get('/api/wallet-balances', async (c) => {
+  try {
+    const address = c.req.query('address') ?? ''
+    if (!/^inj1[0-9a-z]+$/i.test(address)) {
+      return c.json({ error: 'Valid Injective address required' }, 400)
+    }
+    const { getBalances } = await import('./injective')
+    return c.json({ balances: await getBalances(address) })
+  } catch (err) {
+    console.error('/api/wallet-balances error:', err)
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
+  }
+})
+
 app.post('/api/deposit', async (c) => {
   try {
     const { txHash } = await c.req.json() as { txHash?: string }

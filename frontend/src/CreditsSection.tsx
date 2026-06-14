@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getCredits, requestGasTopUp, submitAuthorizedUsdcDeposit, submitDeposit } from './api'
+import { getCredits, getWalletBalances, requestGasTopUp, submitAuthorizedUsdcDeposit, submitDeposit } from './api'
 import { BridgeModal } from './BridgeModal'
 import type { WalletInfo } from './wallet'
+import { selectWalletUsdcDisplay } from './walletBalances'
 import {
   buildBalanceOfData,
   buildErc20TransferData,
@@ -45,7 +46,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
+export function CreditsSection({ wallet, refreshNonce = 0 }: { wallet: WalletInfo; refreshNonce?: number }) {
   const [credits, setCredits] = useState<number | null>(null)
   const [facilitator, setFacilitator] = useState('')
   const [costPerMsg, setCostPerMsg] = useState(0.01)
@@ -104,26 +105,46 @@ export function CreditsSection({ wallet }: { wallet: WalletInfo }) {
       // ignore
     }
 
+    try {
+      const balances = await getWalletBalances(wallet.injAddress)
+      setWalletUsdc(selectWalletUsdcDisplay(balances))
+    } catch {
+      if (window.ethereum) {
+        try {
+          const usdc = await readTokenBalance(nextDepositToken)
+          setWalletUsdc(usdc.display)
+        } catch {
+          // not on Injective EVM
+        }
+      }
+    }
+
     if (window.ethereum) {
       try {
-        const [usdc, legacyUsdt] = await Promise.all([
-          readTokenBalance(nextDepositToken),
-          readTokenBalance(nextLegacyToken),
-        ])
-        setWalletUsdc(usdc.display)
+        const legacyUsdt = await readTokenBalance(nextLegacyToken)
         setWalletLegacyUsdt(legacyUsdt.display)
         setWalletLegacyUsdtRaw(legacyUsdt.raw)
       } catch {
         // not on Injective EVM
       }
     }
-  }, [depositTokenAddress, legacyDepositTokenAddress, readTokenBalance, wallet.ethAddress])
+  }, [depositTokenAddress, legacyDepositTokenAddress, readTokenBalance, wallet.ethAddress, wallet.injAddress])
 
   useEffect(() => {
     fetchCredits()
     const t = setInterval(fetchCredits, 10000)
     return () => clearInterval(t)
   }, [fetchCredits])
+
+  useEffect(() => {
+    if (!refreshNonce) return undefined
+    fetchCredits()
+    const timers = [
+      window.setTimeout(fetchCredits, 2500),
+      window.setTimeout(fetchCredits, 7500),
+    ]
+    return () => timers.forEach(timer => window.clearTimeout(timer))
+  }, [fetchCredits, refreshNonce])
 
   const balance = credits ?? 0
   const messages = Math.floor(balance / costPerMsg)
