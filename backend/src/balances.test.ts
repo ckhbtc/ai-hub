@@ -61,3 +61,41 @@ test('balance report reconciles EVM wallet USDC with trading balances', () => {
     },
   ])
 })
+
+test('balance report does not duplicate matching EVM and bank USDC', () => {
+  const balances = formatPortfolioBalances({
+    bankBalancesList: [
+      {
+        denom: 'inj',
+        amount: '9082700000000000000',
+      },
+      {
+        denom: 'erc20:0xa00c59ff5a080d2b954d0c75e46e22a0c371235a',
+        amount: '13012000',
+      },
+    ],
+    subaccountsList: [],
+  }, {
+    evmUsdc: '13.0119',
+  })
+
+  assert.deepEqual(balances.map(balance => ({
+    symbol: balance.symbol,
+    amount: balance.amount,
+    type: balance.type,
+    location: balance.location,
+  })), [
+    {
+      symbol: 'INJ',
+      amount: '9.0827',
+      type: 'bank',
+      location: 'Injective bank',
+    },
+    {
+      symbol: 'USDC',
+      amount: '13.0120',
+      type: 'bank',
+      location: 'Injective bank',
+    },
+  ])
+})

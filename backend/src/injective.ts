@@ -391,6 +391,14 @@ function toTokenAmount(amount: Decimal.Value | undefined, decimals: number): Dec
   return new Decimal(amount ?? '0').div(new Decimal(10).pow(decimals))
 }
 
+function hasPositiveBankUsdc(portfolio: PortfolioBalancesLike): boolean {
+  return (portfolio.bankBalancesList ?? []).some(balance => {
+    const token = resolveDenom(balance.denom ?? '')
+    if (token?.symbol !== 'USDC') return false
+    return toTokenAmount(balance.amount, token.decimals).gt(0.0001)
+  })
+}
+
 async function fetchEvmUsdcBalance(injAddress: string): Promise<Decimal | null> {
   try {
     const evmAddress = Address.fromBech32(injAddress).getEthereumAddress() as `0x${string}`
@@ -411,8 +419,9 @@ export function formatPortfolioBalances(
   { evmUsdc = null }: { evmUsdc?: Decimal.Value | null } = {},
 ): BalanceInfo[] {
   const result: BalanceInfo[] = []
+  const bankUsdcPresent = hasPositiveBankUsdc(portfolio)
 
-  if (evmUsdc !== null && evmUsdc !== undefined) {
+  if (!bankUsdcPresent && evmUsdc !== null && evmUsdc !== undefined) {
     const amount = new Decimal(evmUsdc)
     if (amount.gt(0.0001)) {
       result.push({
