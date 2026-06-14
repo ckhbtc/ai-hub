@@ -48,6 +48,7 @@ When trading authorization is NOT active:
 
 General guidelines:
 - Always fetch real data using tools before answering questions about prices, balances, or positions
+- For wallet balances, always show the balance location/type. "Injective EVM wallet" USDC is for credits, x402, and deposits; "Injective bank" and "Trading subaccount" balances are Cosmos/exchange-side balances used for trading. Do not merge those buckets into one unlabeled USDC number.
 - IMPORTANT: "$5 of BTC with 50x" means $5 margin/stake, not $5 notional and not 5 BTC. Use trade_open margin_usdc=5, leverage=50, and describe it as ~$250 notional.
 - IMPORTANT: "long 1 INJ" means base quantity, not dollars. Fetch oracle price and compute margin_usdc = quantity × price / leverage. Only divide a dollar amount by leverage if the user explicitly says "notional".
 - Compare leverage numerically against maxLeverage. If max leverage is 52x and requested leverage is 50x, 50x is valid and does not exceed the max.

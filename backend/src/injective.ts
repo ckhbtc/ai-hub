@@ -5,12 +5,14 @@
  */
 
 import {
+  Address,
   IndexerGrpcDerivativesApi,
   IndexerGrpcOracleApi,
   IndexerGrpcAccountPortfolioApi,
 } from '@injectivelabs/sdk-ts'
 import { getNetworkEndpoints, Network } from '@injectivelabs/networks'
 import Decimal from 'decimal.js'
+import { createPublicClient, defineChain, http } from 'viem'
 
 const NETWORK   = Network.MainnetSentry
 const endpoints = getNetworkEndpoints(NETWORK)
@@ -22,6 +24,34 @@ const portfolioApi   = new IndexerGrpcAccountPortfolioApi(endpoints.indexer)
 const QUOTE_DECIMALS = 6
 const INJ_DECIMALS  = 18
 const USDC_QUOTE_DENOM = 'erc20:0xa00c59ff5a080d2b954d0c75e46e22a0c371235a'
+const NATIVE_USDC_ADDRESS = '0xa00C59fF5a080D2b954d0c75e46E22a0c371235a' as const
+const INJ_EVM_RPC = 'https://sentry.evm-rpc.injective.network'
+const RELEVANT_BALANCE_TOKENS = new Set(['INJ', 'USDC', 'USDT'])
+
+const injectiveEvm = defineChain({
+  id: 1776,
+  name: 'Injective EVM',
+  nativeCurrency: { name: 'Injective', symbol: 'INJ', decimals: 18 },
+  rpcUrls: { default: { http: [INJ_EVM_RPC] } },
+})
+
+const erc20BalanceAbi = [
+  {
+    type: 'function',
+    name: 'balanceOf',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+] as const
+
+let _evmClient: ReturnType<typeof createPublicClient> | null = null
+function getEvmClient() {
+  if (!_evmClient) {
+    _evmClient = createPublicClient({ chain: injectiveEvm, transport: http(INJ_EVM_RPC) })
+  }
+  return _evmClient
+}
 
 // ─── Token registry ───────────────────────────────────────────────────────────
 
@@ -155,7 +185,12 @@ export interface BalanceInfo {
   symbol: string
   amount: string
   denom: string
-  type: 'bank' | 'subaccount'
+  type: 'bank' | 'subaccount' | 'evm'
+  location: string
+  availableAmount?: string
+  totalAmount?: string
+  heldAmount?: string
+  note?: string
 }
 
 export interface TokenInfo {
@@ -334,34 +369,111 @@ export async function getFundingRate(symbol: string): Promise<FundingInfo> {
 
 // ─── Balances ─────────────────────────────────────────────────────────────────
 
-export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
-  const portfolio = await portfolioApi.fetchAccountPortfolioBalances(injAddress)
+interface PortfolioBalancesLike {
+  bankBalancesList?: Array<{
+    denom?: string
+    amount?: string
+  }>
+  subaccountsList?: Array<{
+    denom?: string
+    deposit?: {
+      availableBalance?: string
+      totalBalance?: string
+    }
+  }>
+}
+
+function formatBalanceAmount(amount: Decimal): string {
+  return amount.toFixed(4)
+}
+
+function toTokenAmount(amount: Decimal.Value | undefined, decimals: number): Decimal {
+  return new Decimal(amount ?? '0').div(new Decimal(10).pow(decimals))
+}
+
+async function fetchEvmUsdcBalance(injAddress: string): Promise<Decimal | null> {
+  try {
+    const evmAddress = Address.fromBech32(injAddress).getEthereumAddress() as `0x${string}`
+    const raw = await getEvmClient().readContract({
+      address: NATIVE_USDC_ADDRESS,
+      abi: erc20BalanceAbi,
+      functionName: 'balanceOf',
+      args: [evmAddress],
+    }) as bigint
+    return new Decimal(raw.toString()).div(new Decimal(10).pow(QUOTE_DECIMALS))
+  } catch {
+    return null
+  }
+}
+
+export function formatPortfolioBalances(
+  portfolio: PortfolioBalancesLike,
+  { evmUsdc = null }: { evmUsdc?: Decimal.Value | null } = {},
+): BalanceInfo[] {
   const result: BalanceInfo[] = []
 
-  // Only show tokens the user cares about (INJ, USDC, legacy USDT). Skip dust like WETH, LINK, etc.
-  const RELEVANT_TOKENS = new Set(['INJ', 'USDC', 'USDT'])
+  if (evmUsdc !== null && evmUsdc !== undefined) {
+    const amount = new Decimal(evmUsdc)
+    if (amount.gt(0.0001)) {
+      result.push({
+        symbol: 'USDC',
+        amount: formatBalanceAmount(amount),
+        denom: NATIVE_USDC_ADDRESS,
+        type: 'evm',
+        location: 'Injective EVM wallet',
+        note: 'Used for credits, x402 payments, and deposits. Separate from exchange trading balances.',
+      })
+    }
+  }
 
   for (const b of portfolio.bankBalancesList ?? []) {
     const denom = b.denom ?? ''
     const token = resolveDenom(denom)
-    if (!token || !RELEVANT_TOKENS.has(token.symbol)) continue
-    const amt = new Decimal(b.amount ?? '0').div(new Decimal(10).pow(token.decimals))
-    if (amt.gt(0.0001)) {
-      result.push({ symbol: token.symbol, amount: amt.toFixed(4), denom, type: 'bank' })
+    if (!token || !RELEVANT_BALANCE_TOKENS.has(token.symbol)) continue
+    const amount = toTokenAmount(b.amount, token.decimals)
+    if (amount.gt(0.0001)) {
+      result.push({
+        symbol: token.symbol,
+        amount: formatBalanceAmount(amount),
+        denom,
+        type: 'bank',
+        location: 'Injective bank',
+      })
     }
   }
 
   for (const s of portfolio.subaccountsList ?? []) {
     const denom = s.denom ?? ''
     const token = resolveDenom(denom)
-    if (!token || !RELEVANT_TOKENS.has(token.symbol)) continue
-    const avail = new Decimal(s.deposit?.availableBalance ?? '0').div(new Decimal(10).pow(token.decimals))
-    if (avail.gt(0.0001)) {
-      result.push({ symbol: token.symbol, amount: avail.toFixed(4), denom, type: 'subaccount' })
+    if (!token || !RELEVANT_BALANCE_TOKENS.has(token.symbol)) continue
+
+    const available = toTokenAmount(s.deposit?.availableBalance, token.decimals)
+    const total = toTokenAmount(s.deposit?.totalBalance ?? s.deposit?.availableBalance, token.decimals)
+    const held = Decimal.max(total.minus(available), 0)
+    if (total.gt(0.0001)) {
+      result.push({
+        symbol: token.symbol,
+        amount: formatBalanceAmount(available),
+        denom,
+        type: 'subaccount',
+        location: 'Trading subaccount',
+        availableAmount: formatBalanceAmount(available),
+        totalAmount: formatBalanceAmount(total),
+        heldAmount: formatBalanceAmount(held),
+        note: held.gt(0) ? 'Held amount is already committed to open positions or orders.' : undefined,
+      })
     }
   }
 
   return result
+}
+
+export async function getBalances(injAddress: string): Promise<BalanceInfo[]> {
+  const [portfolio, evmUsdc] = await Promise.all([
+    portfolioApi.fetchAccountPortfolioBalances(injAddress),
+    fetchEvmUsdcBalance(injAddress),
+  ])
+  return formatPortfolioBalances(portfolio, { evmUsdc })
 }
 
 // ─── Positions ────────────────────────────────────────────────────────────────

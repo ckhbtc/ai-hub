@@ -69,7 +69,9 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'get_balances',
-    description: 'Get all token balances for an Injective wallet address, including bank and trading subaccount balances.',
+    description:
+      'Get all token balances for an Injective wallet address, reconciling Injective EVM wallet USDC with Injective bank and trading subaccount balances. ' +
+      'Rows include a location/type, and trading subaccounts include available, held, and total amounts when applicable.',
     input_schema: {
       type: 'object',
       properties: {
