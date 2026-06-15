@@ -219,6 +219,11 @@ html, body, #root {
 }
 .kv-val .unit { color: var(--ink-faint); }
 
+.wallet-action {
+  width: 100%;
+  margin-top: 12px;
+}
+
 /* Credits */
 .credits-headline {
   display: flex;

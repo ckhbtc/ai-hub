@@ -1,15 +1,17 @@
 import { CreditsSection } from './CreditsSection'
-import { isMetaMaskAvailable, type WalletInfo } from './wallet'
+import type { WalletInfo } from './wallet'
+import { getWalletControls } from './walletControls'
 
 export function Sidebar({
   wallet, autoSign,
-  onConnect, onToggleMode,
+  onConnect, onDisconnect, onToggleMode,
   onSuggest, modeStatus,
   balanceRefreshNonce,
 }: {
   wallet:              WalletInfo | null
   autoSign:            boolean
   onConnect:          () => void
+  onDisconnect:       () => void
   onToggleMode:       () => void
   onSuggest:          (text: string) => void
   modeStatus:          string
@@ -29,6 +31,7 @@ export function Sidebar({
   const shortInj = wallet
     ? `${wallet.injAddress.slice(0, 4)}…${wallet.injAddress.slice(-4)}`
     : ''
+  const walletControls = getWalletControls(Boolean(wallet))
 
   return (
     <aside className="sidebar">
@@ -44,15 +47,23 @@ export function Sidebar({
               <span className="kv-key">network</span>
               <span className="kv-val">injective-1</span>
             </div>
+            {walletControls.secondaryLabel && (
+              <button
+                className="btn btn-ghost wallet-action"
+                onClick={onDisconnect}
+              >
+                {walletControls.secondaryLabel}
+              </button>
+            )}
           </>
         ) : (
           <button
             className="btn btn-primary"
             style={{ width: '100%' }}
             onClick={onConnect}
-            disabled={!isMetaMaskAvailable()}
+            disabled={walletControls.primaryDisabled}
           >
-            {isMetaMaskAvailable() ? 'Connect wallet' : 'No wallet found'}
+            {walletControls.primaryLabel}
           </button>
         )}
       </div>

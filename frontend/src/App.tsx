@@ -144,6 +144,27 @@ export default function App() {
     } catch (e) { setError((e as Error).message) }
   }
 
+  async function handleDisconnect() {
+    const connectedWallet = wallet
+    try {
+      await window.ethereum?.request({
+        method: 'wallet_revokePermissions',
+        params: [{ eth_accounts: {} }],
+      })
+    } catch {
+      // Wallets that do not support permission revocation still disconnect locally.
+    }
+
+    disableAutoSign(connectedWallet?.injAddress)
+    setWallet(null)
+    setAuthToken(null)
+    setAutoSign(false)
+    setModeStatus('')
+    setToolStatus('')
+    setPendingTool(null)
+    setError(null)
+  }
+
   async function handleEnableAutoSign() {
     if (!wallet) return
     try {
@@ -431,6 +452,7 @@ export default function App() {
           wallet={wallet}
           autoSign={autoSign}
           onConnect={handleConnect}
+          onDisconnect={handleDisconnect}
           onToggleMode={handleToggleMode}
           onSuggest={handleSuggest}
           modeStatus={modeStatus}
